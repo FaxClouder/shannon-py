@@ -10,9 +10,11 @@ from shannon_py.observability.logging import configure_logging
 from shannon_py.orchestration.checkpoints import InMemoryCheckpointManager
 from shannon_py.orchestration.react_graph import ReactGraph
 from shannon_py.orchestration.simple_graph import SimpleGraph
+from shannon_py.sandbox.python_worker import PythonSandboxWorker
+from shannon_py.sandbox.workspace import WorkspaceManager
 from shannon_py.streaming.events import InMemoryEventBus
 from shannon_py.streaming.sse import SSEBroker
-from shannon_py.tools import CalculatorTool, ToolExecutor, ToolRegistry
+from shannon_py.tools import CalculatorTool, PythonExecTool, ToolExecutor, ToolRegistry
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -29,6 +31,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     event_bus = InMemoryEventBus()
     tool_registry = ToolRegistry()
     tool_registry.register(CalculatorTool())
+    workspace_manager = WorkspaceManager(resolved_settings.sandbox_workspace_root)
+    python_worker = PythonSandboxWorker(
+        workspace_manager=workspace_manager,
+        timeout_seconds=resolved_settings.python_exec_timeout_seconds,
+        max_output_chars=resolved_settings.python_exec_max_output_chars,
+    )
+    tool_registry.register(PythonExecTool(python_worker))
     tool_executor = ToolExecutor(tool_registry)
     app.state.tool_service = ToolService(tool_registry, tool_executor)
     app.state.task_service = TaskService(

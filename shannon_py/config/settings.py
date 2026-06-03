@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     task_timeout_seconds: int = Field(default=600, ge=1)
     max_agent_loops: int = Field(default=15, ge=1)
     max_tool_calls: int = Field(default=20, ge=0)
+    sandbox_workspace_root: str = ".sandbox-workspaces"
+    python_exec_timeout_seconds: int = Field(default=5, ge=1)
+    python_exec_max_output_chars: int = Field(default=20_000, ge=1)
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Settings":

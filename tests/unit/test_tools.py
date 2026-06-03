@@ -1,4 +1,8 @@
-from shannon_py.tools import CalculatorTool, ToolExecutor, ToolRegistry
+from pathlib import Path
+
+from shannon_py.sandbox.python_worker import PythonSandboxWorker
+from shannon_py.sandbox.workspace import WorkspaceManager
+from shannon_py.tools import CalculatorTool, PythonExecTool, ToolExecutor, ToolRegistry
 
 
 async def test_tool_executor_runs_registered_calculator() -> None:
@@ -31,3 +35,29 @@ async def test_tool_executor_returns_controlled_error_for_missing_tool() -> None
 
     assert result.success is False
     assert result.error == "Tool not found: missing"
+
+
+async def test_python_exec_tool_runs_in_sandbox_workspace(tmp_path: Path) -> None:
+    registry = ToolRegistry()
+    registry.register(PythonExecTool(PythonSandboxWorker(WorkspaceManager(tmp_path))))
+    executor = ToolExecutor(registry)
+
+    result = await executor.execute(
+        "python_exec",
+        {"session_id": "session_tool", "code": "print(2 + 5)"},
+    )
+
+    assert result.success is True
+    assert result.content == "7\n"
+    assert result.metadata["session_id"] == "session_tool"
+
+
+async def test_python_exec_tool_requires_session_and_code(tmp_path: Path) -> None:
+    registry = ToolRegistry()
+    registry.register(PythonExecTool(PythonSandboxWorker(WorkspaceManager(tmp_path))))
+    executor = ToolExecutor(registry)
+
+    result = await executor.execute("python_exec", {"session_id": "session_tool"})
+
+    assert result.success is False
+    assert result.error == "python_exec requires a non-empty code string."

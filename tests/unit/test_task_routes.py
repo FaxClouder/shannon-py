@@ -126,7 +126,7 @@ def test_tool_routes_list_and_execute_calculator() -> None:
     list_response = client.get("/api/v1/tools")
 
     assert list_response.status_code == 200
-    assert [tool["name"] for tool in list_response.json()] == ["calculator"]
+    assert [tool["name"] for tool in list_response.json()] == ["calculator", "python_exec"]
 
     execute_response = client.post(
         "/api/v1/tools/calculator/execute",
@@ -137,6 +137,16 @@ def test_tool_routes_list_and_execute_calculator() -> None:
     result = execute_response.json()
     assert result["success"] is True
     assert result["content"] == "2.5"
+
+    python_response = client.post(
+        "/api/v1/tools/python_exec/execute",
+        json={"arguments": {"session_id": "session_api_tool", "code": "print('ok')"}},
+    )
+
+    assert python_response.status_code == 200
+    python_result = python_response.json()
+    assert python_result["success"] is True
+    assert python_result["content"] == "ok\n"
 
 
 def test_react_task_uses_calculator_tool() -> None:

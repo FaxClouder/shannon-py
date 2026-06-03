@@ -703,6 +703,25 @@ GitHub 版本管理记录：
 - 路径穿越被拒绝。
 - timeout、输出过大、内存过大可控失败。
 
+当前状态（2026-06-03）：已完成子进程 sandbox MVP。
+
+已落地内容：
+
+- 已新增 `WorkspaceManager`、`Workspace`、`FileGuard` 和 `WorkspaceAccessError`。
+- `FileGuard` 已拒绝绝对路径、`..` 路径穿越和软链接解析后的 workspace 逃逸。
+- 已新增 `PythonSandboxWorker`，通过独立 Python 子进程在 session workspace 内执行代码。
+- `PythonSandboxWorker` 已支持 timeout 和输出大小限制，并标准化 stdout/stderr 换行。
+- 已新增 `PythonExecTool`，工具声明为 `dangerous=True` 且权限包含 `approval`。
+- `python_exec` 已注册到工具注册表，可通过 `POST /api/v1/tools/python_exec/execute` 调用。
+- 已将 `.sandbox-workspaces/` 加入 `.gitignore`，避免提交本地运行产物。
+- 已补充 workspace guard、python worker、python_exec 工具和工具 API 测试。
+
+验证记录：
+
+- 已执行 `uv run pytest`，结果为 `31 passed`。
+- 已执行 `uv run ruff check .`，结果为 `All checks passed!`。
+- 当前尚未实现容器/进程级内存限制；`python_exec` 已通过子进程和 timeout 隔离 API 进程，但不是强隔离容器。
+
 ### 里程碑 7：DAG 与 Research
 
 交付内容：

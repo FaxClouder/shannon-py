@@ -30,6 +30,7 @@ env/
 tmp/
 artifacts/
 .uv-cache/
+.sandbox-workspaces/
 
 # IDE
 .idea/
