@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Local environments
+.venv/
+.uv-verify-venv/
+.uv-python/
+venv/
+env/
+
+# Local configuration and runtime outputs
+.env
+*.log
+*.sqlite
+*.sqlite3
+*.db
+.tmp/
+tmp/
+artifacts/
+.uv-cache/
+
+# IDE
+.idea/
+.vscode/

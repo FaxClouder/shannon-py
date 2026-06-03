@@ -1,0 +1,8 @@
+default_provider: mock
+default_model: mock-default
+
+providers:
+  mock:
+    enabled: true
+    models:
+      - mock-default

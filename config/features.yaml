@@ -1,0 +1,4 @@
+enable_shell_tools: false
+enable_live_web_tools: false
+enable_research_graph: false
+enable_swarm_graph: false
