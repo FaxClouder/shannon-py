@@ -151,6 +151,34 @@ LangGraph 工作流应保持可读、可恢复、可测试。
 7. 实现后运行相关测试。
 8. 最终说明修改内容、验证结果和未完成风险。
 
+## Git 与版本管理
+
+本项目已启用 Git 版本控制，并绑定 GitHub 远端仓库：
+
+- 本地仓库：`D:\WorkSpace\Shannon-py`
+- 主分支：`main`
+- 远端：`origin`
+- GitHub 仓库：`https://github.com/FaxClouder/shannon-py`
+- 当前 GitHub CLI 授权账号应为：`FaxClouder`
+
+维护规则：
+
+- 每次功能开发或文档维护完成后，先运行相关测试，再提交。
+- 提交信息使用简洁英文前缀，例如 `chore:`、`feat:`、`fix:`、`docs:`、`test:`。
+- 不提交 `.env`、`.venv`、`.idea`、`.uv-cache`、`.uv-python`、`.uv-verify-venv`、缓存、日志、本地数据库文件和临时产物。
+- 推送前检查 `git status --short --branch`，确认没有意外文件。
+- 如 GitHub 推送失败，先检查 `gh auth status` 是否为 `FaxClouder`，再检查远端地址是否为 `https://github.com/FaxClouder/shannon-py.git`。
+
+推荐验证命令：
+
+```powershell
+$env:UV_CACHE_DIR=".uv-cache"
+$env:UV_PYTHON_INSTALL_DIR=".uv-python"
+$env:UV_PROJECT_ENVIRONMENT=".uv-verify-venv"
+uv run pytest
+uv run ruff check .
+```
+
 ## 当前项目阶段
 
 当前阶段是任务 MVP 准备阶段。项目骨架已完成第一轮落地，后续开发应在现有包结构、配置层、FastAPI 应用工厂和测试入口基础上继续推进。

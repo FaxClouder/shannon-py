@@ -545,6 +545,15 @@ uv 验证记录：
 - 已使用 Codex 内置 Python `3.12.13` 执行 `uv sync --python <python.exe> --extra dev`，成功解析并安装 31 个包，生成 `uv.lock`。
 - 已执行 `uv run pytest`，结果为 `2 passed`。
 
+GitHub 版本管理记录：
+
+- 已初始化本地 Git 仓库，主分支为 `main`。
+- 已绑定远端仓库 `origin`：`https://github.com/FaxClouder/shannon-py.git`。
+- GitHub 仓库地址：`https://github.com/FaxClouder/shannon-py`。
+- 已完成首轮项目骨架上传，远端 `origin/main` 与本地 `main` 对齐。
+- 当前 GitHub CLI 授权账号应为 `FaxClouder`；推送前可用 `gh auth status` 验证。
+- 本地忽略规则已覆盖 `.env`、`.venv`、`.idea`、`.uv-cache`、`.uv-python`、`.uv-verify-venv`、缓存、日志、本地数据库文件和临时产物。
+
 ### 里程碑 2：任务 MVP
 
 交付内容：
