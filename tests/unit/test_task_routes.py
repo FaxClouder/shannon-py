@@ -12,7 +12,7 @@ def test_submit_and_get_task_returns_mock_result() -> None:
 
     assert submit_response.status_code == 200
     submitted = submit_response.json()
-    assert submitted["status"] == "completed"
+    assert submitted["status"] == "queued"
     assert submitted["session_id"].startswith("session_")
 
     get_response = client.get(f"/api/v1/tasks/{submitted['task_id']}")
@@ -22,6 +22,16 @@ def test_submit_and_get_task_returns_mock_result() -> None:
     assert result["status"] == "completed"
     assert result["output"] == "Mock response for: hello"
     assert result["metadata"]["provider"] == "mock"
+
+    events_response = client.get(f"/api/v1/stream/events/{submitted['workflow_id']}")
+
+    assert events_response.status_code == 200
+    assert [event["type"] for event in events_response.json()] == [
+        "workflow_started",
+        "llm_output",
+        "workflow_completed",
+        "stream_end",
+    ]
 
 
 def test_get_missing_task_returns_404() -> None:

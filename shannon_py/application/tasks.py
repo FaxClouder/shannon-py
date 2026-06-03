@@ -7,7 +7,9 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from shannon_py.memory.session import ConversationMessage, InMemorySessionRepository, MessageRole
 from shannon_py.orchestration.simple_graph import SimpleGraph, SimpleGraphInput
+from shannon_py.streaming.events import InMemoryEventBus, StreamEvent, StreamEventType
 
 
 class TaskStatus(StrEnum):
@@ -105,17 +107,23 @@ class TaskService:
         self,
         repository: InMemoryTaskRepository,
         simple_graph: SimpleGraph,
+        session_repository: InMemorySessionRepository,
+        event_bus: InMemoryEventBus,
     ) -> None:
         self._repository = repository
         self._simple_graph = simple_graph
+        self._session_repository = session_repository
+        self._event_bus = event_bus
 
     async def submit(self, request: TaskRequest) -> TaskHandle:
         record = await self._repository.create(request)
-        await self._run(record)
-        updated = await self._repository.get(record.task_id)
-        if updated is None:
-            raise RuntimeError(f"Task disappeared after execution: {record.task_id}")
-        return updated.to_handle()
+        return record.to_handle()
+
+    async def run_task(self, task_id: str) -> TaskResult | None:
+        record = await self._repository.get(task_id)
+        if record is None:
+            return None
+        return await self._run(record)
 
     async def get_result(self, task_id: str) -> TaskResult | None:
         record = await self._repository.get(task_id)
@@ -131,20 +139,33 @@ class TaskService:
             metadata=record.request.metadata,
         )
 
-    async def _run(self, record: TaskRecord) -> None:
+    async def list_events(self, workflow_id: str) -> list[StreamEvent]:
+        return await self._event_bus.list_events(workflow_id)
+
+    async def list_session_messages(self, session_id: str) -> list[ConversationMessage]:
+        return await self._session_repository.list_messages(session_id)
+
+    async def _run(self, record: TaskRecord) -> TaskResult:
         await self._repository.update_status(record.task_id, TaskStatus.RUNNING)
+        await self._publish(record, StreamEventType.WORKFLOW_STARTED)
 
         try:
             if record.request.mode != "simple":
                 raise ValueError(f"Unsupported task mode: {record.request.mode}")
 
+            session_history = await self._session_repository.list_messages(record.session_id)
             graph_output = await self._simple_graph.run(
                 SimpleGraphInput(
                     task_id=record.task_id,
                     workflow_id=record.workflow_id,
                     session_id=record.session_id,
                     query=record.request.query,
-                    context=record.request.context,
+                    context={
+                        **record.request.context,
+                        "session_history": [
+                            message.model_dump(mode="json") for message in session_history
+                        ],
+                    },
                 )
             )
             result = TaskResult(
@@ -155,11 +176,37 @@ class TaskService:
                 output=graph_output.output,
                 metadata={
                     **record.request.metadata,
+                    **graph_output.metadata,
                     "provider": graph_output.provider,
                     "model": graph_output.model,
                 },
             )
             await self._repository.update_status(record.task_id, TaskStatus.COMPLETED, result)
+            await self._session_repository.append_message(
+                record.session_id,
+                ConversationMessage(
+                    role=MessageRole.USER,
+                    content=record.request.query,
+                    task_id=record.task_id,
+                ),
+            )
+            await self._session_repository.append_message(
+                record.session_id,
+                ConversationMessage(
+                    role=MessageRole.ASSISTANT,
+                    content=graph_output.output,
+                    task_id=record.task_id,
+                    metadata={"provider": graph_output.provider, "model": graph_output.model},
+                ),
+            )
+            await self._publish(
+                record,
+                StreamEventType.LLM_OUTPUT,
+                {"output": graph_output.output},
+            )
+            await self._publish(record, StreamEventType.WORKFLOW_COMPLETED)
+            await self._publish(record, StreamEventType.STREAM_END)
+            return result
         except Exception as exc:
             result = TaskResult(
                 task_id=record.task_id,
@@ -170,3 +217,21 @@ class TaskService:
                 metadata=record.request.metadata,
             )
             await self._repository.update_status(record.task_id, TaskStatus.FAILED, result)
+            await self._publish(record, StreamEventType.WORKFLOW_FAILED, {"error": result.error})
+            await self._publish(record, StreamEventType.STREAM_END)
+            return result
+
+    async def _publish(
+        self,
+        record: TaskRecord,
+        event_type: StreamEventType,
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        await self._event_bus.publish(
+            StreamEvent(
+                workflow_id=record.workflow_id,
+                task_id=record.task_id,
+                type=event_type,
+                payload=payload or {},
+            )
+        )

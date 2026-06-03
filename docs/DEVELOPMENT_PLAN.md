@@ -580,10 +580,15 @@ GitHub 版本管理记录：
 - 已实现 `SimpleGraph`，通过统一 provider 接口完成单次模型调用。
 - 已新增 `POST /api/v1/tasks` 和 `GET /api/v1/tasks/{task_id}`。
 - 已补充任务服务和任务 API 测试。
+- 已将 `TaskService.submit` 调整为只创建 `queued` 任务，任务执行通过 `run_task` 单独推进到 `running`、`completed` 或 `failed`。
+- API 层已通过 FastAPI `BackgroundTasks` 触发任务执行，提交接口返回任务句柄，查询接口读取当前结果。
+- 已新增 in-memory session history 基础，同一 `session_id` 的后续任务可读取前序 user/assistant 消息。
+- 已新增 in-memory event bus 基础，任务执行会发布 `workflow_started`、`llm_output`、`workflow_completed`、`workflow_failed` 和 `stream_end` 等事件。
+- 已新增 `GET /api/v1/stream/events/{workflow_id}`，作为 SSE 落地前的事件调试查询入口。
 
 验证记录：
 
-- 已执行 `uv run pytest`，结果为 `6 passed`。
+- 已执行 `uv run pytest`，结果为 `8 passed`。
 - 已执行 `uv run ruff check .`，结果为 `All checks passed!`。
 - pytest 当前仍有 FastAPI TestClient 依赖链的 `StarletteDeprecationWarning`，不影响当前 MVP 功能。
 

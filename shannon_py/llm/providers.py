@@ -32,9 +32,14 @@ class MockProvider:
         self.model = model
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
+        session_history = request.context.get("session_history", [])
+        session_history_count = len(session_history) if isinstance(session_history, list) else 0
         return LLMResponse(
             content=f"Mock response for: {request.prompt}",
             provider=self.name,
             model=self.model,
-            metadata={"mock": True},
+            metadata={
+                "mock": True,
+                "session_history_count": session_history_count,
+            },
         )

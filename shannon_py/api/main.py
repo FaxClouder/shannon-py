@@ -4,8 +4,10 @@ from shannon_py.api.routes import router
 from shannon_py.application.tasks import InMemoryTaskRepository, TaskService
 from shannon_py.config import Settings, get_settings
 from shannon_py.llm.providers import MockProvider
+from shannon_py.memory.session import InMemorySessionRepository
 from shannon_py.observability.logging import configure_logging
 from shannon_py.orchestration.simple_graph import SimpleGraph
+from shannon_py.streaming.events import InMemoryEventBus
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -22,6 +24,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.task_service = TaskService(
         repository=InMemoryTaskRepository(),
         simple_graph=SimpleGraph(MockProvider(model=resolved_settings.default_model)),
+        session_repository=InMemorySessionRepository(),
+        event_bus=InMemoryEventBus(),
     )
     app.include_router(router)
     return app
