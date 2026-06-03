@@ -6,6 +6,7 @@ from shannon_py.config import Settings, get_settings
 from shannon_py.llm.providers import MockProvider
 from shannon_py.memory.session import InMemorySessionRepository
 from shannon_py.observability.logging import configure_logging
+from shannon_py.orchestration.checkpoints import InMemoryCheckpointManager
 from shannon_py.orchestration.simple_graph import SimpleGraph
 from shannon_py.streaming.events import InMemoryEventBus
 
@@ -26,6 +27,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         simple_graph=SimpleGraph(MockProvider(model=resolved_settings.default_model)),
         session_repository=InMemorySessionRepository(),
         event_bus=InMemoryEventBus(),
+        checkpoint_manager=InMemoryCheckpointManager(),
     )
     app.include_router(router)
     return app

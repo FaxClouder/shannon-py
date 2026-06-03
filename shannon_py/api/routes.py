@@ -2,6 +2,8 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from shannon_py.application.tasks import TaskHandle, TaskRequest, TaskResult
+from shannon_py.memory.session import Session
+from shannon_py.orchestration.checkpoints import WorkflowCheckpoint
 from shannon_py.streaming.events import StreamEvent
 
 
@@ -45,6 +47,41 @@ async def get_task(task_id: str, request: Request) -> TaskResult:
     if result is None:
         raise HTTPException(status_code=404, detail="Task not found.")
     return result
+
+
+@router.get("/api/v1/sessions/{session_id}", response_model=Session, tags=["sessions"])
+async def get_session(session_id: str, request: Request) -> Session:
+    task_service = request.app.state.task_service
+    return await task_service.get_session(session_id)
+
+
+@router.get(
+    "/api/v1/checkpoints/{workflow_id}",
+    response_model=list[WorkflowCheckpoint],
+    tags=["checkpoints"],
+)
+async def list_workflow_checkpoints(
+    workflow_id: str,
+    request: Request,
+) -> list[WorkflowCheckpoint]:
+    task_service = request.app.state.task_service
+    return await task_service.list_checkpoints(workflow_id)
+
+
+@router.get(
+    "/api/v1/checkpoints/{workflow_id}/latest",
+    response_model=WorkflowCheckpoint,
+    tags=["checkpoints"],
+)
+async def get_latest_workflow_checkpoint(
+    workflow_id: str,
+    request: Request,
+) -> WorkflowCheckpoint:
+    task_service = request.app.state.task_service
+    checkpoint = await task_service.get_latest_checkpoint(workflow_id)
+    if checkpoint is None:
+        raise HTTPException(status_code=404, detail="Checkpoint not found.")
+    return checkpoint
 
 
 @router.get(

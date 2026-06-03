@@ -7,7 +7,13 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from shannon_py.memory.session import ConversationMessage, InMemorySessionRepository, MessageRole
+from shannon_py.memory.session import (
+    ConversationMessage,
+    InMemorySessionRepository,
+    MessageRole,
+    Session,
+)
+from shannon_py.orchestration.checkpoints import InMemoryCheckpointManager, WorkflowCheckpoint
 from shannon_py.orchestration.simple_graph import SimpleGraph, SimpleGraphInput
 from shannon_py.streaming.events import InMemoryEventBus, StreamEvent, StreamEventType
 
@@ -109,11 +115,13 @@ class TaskService:
         simple_graph: SimpleGraph,
         session_repository: InMemorySessionRepository,
         event_bus: InMemoryEventBus,
+        checkpoint_manager: InMemoryCheckpointManager,
     ) -> None:
         self._repository = repository
         self._simple_graph = simple_graph
         self._session_repository = session_repository
         self._event_bus = event_bus
+        self._checkpoint_manager = checkpoint_manager
 
     async def submit(self, request: TaskRequest) -> TaskHandle:
         record = await self._repository.create(request)
@@ -145,8 +153,18 @@ class TaskService:
     async def list_session_messages(self, session_id: str) -> list[ConversationMessage]:
         return await self._session_repository.list_messages(session_id)
 
+    async def get_session(self, session_id: str) -> Session:
+        return await self._session_repository.get_session(session_id)
+
+    async def list_checkpoints(self, workflow_id: str) -> list[WorkflowCheckpoint]:
+        return await self._checkpoint_manager.list_checkpoints(workflow_id)
+
+    async def get_latest_checkpoint(self, workflow_id: str) -> WorkflowCheckpoint | None:
+        return await self._checkpoint_manager.latest(workflow_id)
+
     async def _run(self, record: TaskRecord) -> TaskResult:
         await self._repository.update_status(record.task_id, TaskStatus.RUNNING)
+        await self._save_checkpoint(record, TaskStatus.RUNNING)
         await self._publish(record, StreamEventType.WORKFLOW_STARTED)
 
         try:
@@ -182,6 +200,7 @@ class TaskService:
                 },
             )
             await self._repository.update_status(record.task_id, TaskStatus.COMPLETED, result)
+            await self._save_checkpoint(record, TaskStatus.COMPLETED, result)
             await self._session_repository.append_message(
                 record.session_id,
                 ConversationMessage(
@@ -217,6 +236,7 @@ class TaskService:
                 metadata=record.request.metadata,
             )
             await self._repository.update_status(record.task_id, TaskStatus.FAILED, result)
+            await self._save_checkpoint(record, TaskStatus.FAILED, result)
             await self._publish(record, StreamEventType.WORKFLOW_FAILED, {"error": result.error})
             await self._publish(record, StreamEventType.STREAM_END)
             return result
@@ -233,5 +253,30 @@ class TaskService:
                 task_id=record.task_id,
                 type=event_type,
                 payload=payload or {},
+            )
+        )
+
+    async def _save_checkpoint(
+        self,
+        record: TaskRecord,
+        status: TaskStatus,
+        result: TaskResult | None = None,
+    ) -> None:
+        state: dict[str, Any] = {
+            "query": record.request.query,
+            "mode": record.request.mode,
+            "context": record.request.context,
+            "metadata": record.request.metadata,
+        }
+        if result is not None:
+            state["result"] = result.model_dump(mode="json")
+
+        await self._checkpoint_manager.save(
+            WorkflowCheckpoint(
+                workflow_id=record.workflow_id,
+                task_id=record.task_id,
+                session_id=record.session_id,
+                status=status,
+                state=state,
             )
         )

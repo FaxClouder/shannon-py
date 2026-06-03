@@ -20,6 +20,12 @@ class ConversationMessage(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class Session(BaseModel):
+    session_id: str
+    messages: list[ConversationMessage] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class InMemorySessionRepository:
     def __init__(self) -> None:
         self._messages: dict[str, list[ConversationMessage]] = {}
@@ -29,3 +35,6 @@ class InMemorySessionRepository:
 
     async def list_messages(self, session_id: str) -> list[ConversationMessage]:
         return list(self._messages.get(session_id, []))
+
+    async def get_session(self, session_id: str) -> Session:
+        return Session(session_id=session_id, messages=await self.list_messages(session_id))

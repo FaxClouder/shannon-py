@@ -6,6 +6,7 @@ from shannon_py.application.tasks import (
 )
 from shannon_py.llm.providers import MockProvider
 from shannon_py.memory.session import InMemorySessionRepository
+from shannon_py.orchestration.checkpoints import InMemoryCheckpointManager
 from shannon_py.orchestration.simple_graph import SimpleGraph
 from shannon_py.streaming.events import InMemoryEventBus, StreamEventType
 
@@ -16,6 +17,7 @@ def create_task_service() -> TaskService:
         simple_graph=SimpleGraph(MockProvider()),
         session_repository=InMemorySessionRepository(),
         event_bus=InMemoryEventBus(),
+        checkpoint_manager=InMemoryCheckpointManager(),
     )
 
 
@@ -85,3 +87,17 @@ async def test_task_service_publishes_workflow_events() -> None:
         StreamEventType.WORKFLOW_COMPLETED,
         StreamEventType.STREAM_END,
     ]
+
+
+async def test_task_service_saves_running_and_completed_checkpoints() -> None:
+    service = create_task_service()
+
+    handle = await service.submit(TaskRequest(query="checkpoint"))
+    await service.run_task(handle.task_id)
+    checkpoints = await service.list_checkpoints(handle.workflow_id)
+    latest = await service.get_latest_checkpoint(handle.workflow_id)
+
+    assert [checkpoint.status for checkpoint in checkpoints] == ["running", "completed"]
+    assert latest is not None
+    assert latest.status == "completed"
+    assert latest.state["result"]["output"] == "Mock response for: checkpoint"

@@ -605,6 +605,24 @@ GitHub 版本管理记录：
 - 同一个 `session_id` 可连续多轮对话。
 - checkpoint 可按 `workflow_id` 查询。
 
+当前状态（2026-06-03）：已完成 in-memory 基础。
+
+已落地内容：
+
+- 已新增 `Session` 与 `ConversationMessage` 基础模型。
+- 已新增 `InMemorySessionRepository`，支持同一 `session_id` 的消息追加和查询。
+- 已新增 `WorkflowCheckpoint` 与 `InMemoryCheckpointManager`。
+- `TaskService` 已在任务进入 `running`、`completed`、`failed` 时保存 checkpoint。
+- 已新增 `GET /api/v1/sessions/{session_id}` 查询会话消息。
+- 已新增 `GET /api/v1/checkpoints/{workflow_id}` 查询 workflow checkpoint 列表。
+- 已新增 `GET /api/v1/checkpoints/{workflow_id}/latest` 查询最新 checkpoint。
+
+验证记录：
+
+- 已执行 `uv run pytest`，结果为 `10 passed`。
+- 已执行 `uv run ruff check .`，结果为 `All checks passed!`。
+- PostgreSQL repository 和 LangGraph 原生 checkpoint 仍未接入，当前为 MVP in-memory 实现。
+
 ### 里程碑 4：事件流
 
 交付内容：
