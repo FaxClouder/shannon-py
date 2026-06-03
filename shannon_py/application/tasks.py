@@ -15,6 +15,7 @@ from shannon_py.memory.session import (
     Session,
 )
 from shannon_py.orchestration.checkpoints import InMemoryCheckpointManager, WorkflowCheckpoint
+from shannon_py.orchestration.react_graph import ReactGraph, ReactGraphInput
 from shannon_py.orchestration.simple_graph import SimpleGraph, SimpleGraphInput
 from shannon_py.streaming.events import InMemoryEventBus, StreamEvent, StreamEventType
 from shannon_py.streaming.sse import SSEBroker
@@ -115,6 +116,7 @@ class TaskService:
         self,
         repository: InMemoryTaskRepository,
         simple_graph: SimpleGraph,
+        react_graph: ReactGraph,
         session_repository: InMemorySessionRepository,
         event_bus: InMemoryEventBus,
         checkpoint_manager: InMemoryCheckpointManager,
@@ -122,6 +124,7 @@ class TaskService:
     ) -> None:
         self._repository = repository
         self._simple_graph = simple_graph
+        self._react_graph = react_graph
         self._session_repository = session_repository
         self._event_bus = event_bus
         self._checkpoint_manager = checkpoint_manager
@@ -179,36 +182,33 @@ class TaskService:
         await self._publish(record, StreamEventType.WORKFLOW_STARTED)
 
         try:
-            if record.request.mode != "simple":
-                raise ValueError(f"Unsupported task mode: {record.request.mode}")
-
             session_history = await self._session_repository.list_messages(record.session_id)
-            graph_output = await self._simple_graph.run(
-                SimpleGraphInput(
-                    task_id=record.task_id,
-                    workflow_id=record.workflow_id,
-                    session_id=record.session_id,
-                    query=record.request.query,
-                    context={
-                        **record.request.context,
-                        "session_history": [
-                            message.model_dump(mode="json") for message in session_history
-                        ],
-                    },
+            graph_context = {
+                **record.request.context,
+                "session_history": [
+                    message.model_dump(mode="json") for message in session_history
+                ],
+            }
+            graph_output = await self._run_graph(record, graph_context)
+            result_metadata = {
+                **record.request.metadata,
+                **graph_output.metadata,
+            }
+            if record.request.mode == "simple":
+                result_metadata.update(
+                    {
+                        "provider": graph_output.provider,
+                        "model": graph_output.model,
+                    }
                 )
-            )
+
             result = TaskResult(
                 task_id=record.task_id,
                 workflow_id=record.workflow_id,
                 session_id=record.session_id,
                 status=TaskStatus.COMPLETED,
                 output=graph_output.output,
-                metadata={
-                    **record.request.metadata,
-                    **graph_output.metadata,
-                    "provider": graph_output.provider,
-                    "model": graph_output.model,
-                },
+                metadata=result_metadata,
             )
             await self._repository.update_status(record.task_id, TaskStatus.COMPLETED, result)
             await self._save_checkpoint(record, TaskStatus.COMPLETED, result)
@@ -226,7 +226,7 @@ class TaskService:
                     role=MessageRole.ASSISTANT,
                     content=graph_output.output,
                     task_id=record.task_id,
-                    metadata={"provider": graph_output.provider, "model": graph_output.model},
+                    metadata=result_metadata,
                 ),
             )
             await self._publish(
@@ -251,6 +251,51 @@ class TaskService:
             await self._publish(record, StreamEventType.WORKFLOW_FAILED, {"error": result.error})
             await self._publish(record, StreamEventType.STREAM_END)
             return result
+
+    async def _run_graph(
+        self,
+        record: TaskRecord,
+        graph_context: dict[str, Any],
+    ) -> Any:
+        if record.request.mode == "simple":
+            return await self._simple_graph.run(
+                SimpleGraphInput(
+                    task_id=record.task_id,
+                    workflow_id=record.workflow_id,
+                    session_id=record.session_id,
+                    query=record.request.query,
+                    context=graph_context,
+                )
+            )
+
+        if record.request.mode == "react":
+            graph_output = await self._react_graph.run(
+                ReactGraphInput(
+                    task_id=record.task_id,
+                    workflow_id=record.workflow_id,
+                    session_id=record.session_id,
+                    query=record.request.query,
+                    context=graph_context,
+                )
+            )
+            await self._publish(
+                record,
+                StreamEventType.TOOL_INVOKED,
+                {"tool_name": graph_output.tool_name},
+            )
+            event_type = (
+                StreamEventType.TOOL_OBSERVATION
+                if graph_output.tool_result.success
+                else StreamEventType.TOOL_ERROR
+            )
+            await self._publish(
+                record,
+                event_type,
+                graph_output.tool_result.model_dump(mode="json"),
+            )
+            return graph_output
+
+        raise ValueError(f"Unsupported task mode: {record.request.mode}")
 
     async def _publish(
         self,

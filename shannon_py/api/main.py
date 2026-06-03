@@ -2,14 +2,17 @@ from fastapi import FastAPI
 
 from shannon_py.api.routes import router
 from shannon_py.application.tasks import InMemoryTaskRepository, TaskService
+from shannon_py.application.tools import ToolService
 from shannon_py.config import Settings, get_settings
 from shannon_py.llm.providers import MockProvider
 from shannon_py.memory.session import InMemorySessionRepository
 from shannon_py.observability.logging import configure_logging
 from shannon_py.orchestration.checkpoints import InMemoryCheckpointManager
+from shannon_py.orchestration.react_graph import ReactGraph
 from shannon_py.orchestration.simple_graph import SimpleGraph
 from shannon_py.streaming.events import InMemoryEventBus
 from shannon_py.streaming.sse import SSEBroker
+from shannon_py.tools import CalculatorTool, ToolExecutor, ToolRegistry
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -24,9 +27,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = resolved_settings
     event_bus = InMemoryEventBus()
+    tool_registry = ToolRegistry()
+    tool_registry.register(CalculatorTool())
+    tool_executor = ToolExecutor(tool_registry)
+    app.state.tool_service = ToolService(tool_registry, tool_executor)
     app.state.task_service = TaskService(
         repository=InMemoryTaskRepository(),
         simple_graph=SimpleGraph(MockProvider(model=resolved_settings.default_model)),
+        react_graph=ReactGraph(tool_executor),
         session_repository=InMemorySessionRepository(),
         event_bus=event_bus,
         checkpoint_manager=InMemoryCheckpointManager(),

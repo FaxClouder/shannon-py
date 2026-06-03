@@ -95,3 +95,44 @@ def test_get_missing_latest_checkpoint_returns_404() -> None:
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Checkpoint not found."
+
+
+def test_tool_routes_list_and_execute_calculator() -> None:
+    app = create_app(Settings(environment="test", testing=True))
+    client = TestClient(app)
+
+    list_response = client.get("/api/v1/tools")
+
+    assert list_response.status_code == 200
+    assert [tool["name"] for tool in list_response.json()] == ["calculator"]
+
+    execute_response = client.post(
+        "/api/v1/tools/calculator/execute",
+        json={"arguments": {"expression": "10 / 4"}},
+    )
+
+    assert execute_response.status_code == 200
+    result = execute_response.json()
+    assert result["success"] is True
+    assert result["content"] == "2.5"
+
+
+def test_react_task_uses_calculator_tool() -> None:
+    app = create_app(Settings(environment="test", testing=True))
+    client = TestClient(app)
+
+    submit_response = client.post(
+        "/api/v1/tasks",
+        json={"query": "6 * 7", "mode": "react"},
+    )
+
+    assert submit_response.status_code == 200
+    submitted = submit_response.json()
+
+    result_response = client.get(f"/api/v1/tasks/{submitted['task_id']}")
+
+    assert result_response.status_code == 200
+    result = result_response.json()
+    assert result["status"] == "completed"
+    assert result["output"] == "Calculator result: 42"
+    assert result["metadata"]["tool_name"] == "calculator"

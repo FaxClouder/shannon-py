@@ -667,6 +667,24 @@ GitHub 版本管理记录：
 - ReAct 任务能调用 calculator。
 - 工具失败会进入 observation，不直接崩溃 workflow。
 
+当前状态（2026-06-03）：已完成 calculator 与最小 ReAct 链路。
+
+已落地内容：
+
+- 已新增 `ToolSpec`、`ToolResult`、`ToolRegistry`、`ToolExecutor` 和 `ToolService`。
+- 已新增 `CalculatorTool`，通过 AST 白名单解析基础算术表达式，不执行任意 Python。
+- 已新增 `GET /api/v1/tools` 和 `POST /api/v1/tools/{tool_name}/execute`。
+- 已新增 `ReactGraph`，当前支持通过 `calculator` 处理 `mode=react` 的基础算术任务。
+- `TaskService` 已支持 `mode=simple` 和 `mode=react` 路由。
+- ReAct 任务执行会发布 `tool_invoked`、`tool_observation` 或 `tool_error` 事件。
+- 已补充工具层、ReactGraph 服务链路和工具 API 测试。
+
+验证记录：
+
+- 已执行 `uv run pytest`，结果为 `18 passed`。
+- 已执行 `uv run ruff check .`，结果为 `All checks passed!`。
+- 当前 ReAct 仍是 MVP 规则路由，尚未实现 LLM 驱动的多轮 action/observation loop。
+
 ### 里程碑 6：沙箱
 
 交付内容：

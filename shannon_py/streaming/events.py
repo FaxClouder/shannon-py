@@ -13,6 +13,9 @@ class StreamEventType(StrEnum):
     WORKFLOW_COMPLETED = "workflow_completed"
     WORKFLOW_FAILED = "workflow_failed"
     LLM_OUTPUT = "llm_output"
+    TOOL_INVOKED = "tool_invoked"
+    TOOL_OBSERVATION = "tool_observation"
+    TOOL_ERROR = "tool_error"
     STREAM_END = "stream_end"
 
 

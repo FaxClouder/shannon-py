@@ -6,6 +6,7 @@ from shannon_py.application.tasks import TaskHandle, TaskRequest, TaskResult
 from shannon_py.memory.session import Session
 from shannon_py.orchestration.checkpoints import WorkflowCheckpoint
 from shannon_py.streaming.events import StreamEvent
+from shannon_py.tools import ToolResult, ToolSpec
 
 
 class HealthResponse(BaseModel):
@@ -13,6 +14,10 @@ class HealthResponse(BaseModel):
     service: str = Field(description="Configured service name.")
     environment: str = Field(description="Runtime environment name.")
     version: str = Field(description="Application version.")
+
+
+class ToolExecuteRequest(BaseModel):
+    arguments: dict[str, object] = Field(default_factory=dict)
 
 
 router = APIRouter()
@@ -83,6 +88,22 @@ async def get_latest_workflow_checkpoint(
     if checkpoint is None:
         raise HTTPException(status_code=404, detail="Checkpoint not found.")
     return checkpoint
+
+
+@router.get("/api/v1/tools", response_model=list[ToolSpec], tags=["tools"])
+async def list_tools(request: Request) -> list[ToolSpec]:
+    tool_service = request.app.state.tool_service
+    return await tool_service.list_tools()
+
+
+@router.post("/api/v1/tools/{tool_name}/execute", response_model=ToolResult, tags=["tools"])
+async def execute_tool(
+    tool_name: str,
+    tool_request: ToolExecuteRequest,
+    request: Request,
+) -> ToolResult:
+    tool_service = request.app.state.tool_service
+    return await tool_service.execute(tool_name, dict(tool_request.arguments))
 
 
 @router.get(
