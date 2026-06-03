@@ -21,6 +21,7 @@ env/
 
 # Local configuration and runtime outputs
 .env
+.gh-config/
 *.log
 *.sqlite
 *.sqlite3
