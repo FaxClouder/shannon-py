@@ -37,7 +37,9 @@ def test_submit_and_get_task_returns_mock_result() -> None:
         "stream_end",
     ]
 
-    sse_response = client.get(f"/api/v1/stream/sse?workflow_id={submitted['workflow_id']}")
+    sse_response = client.get(
+        f"/api/v1/stream/sse?workflow_id={submitted['workflow_id']}&live=false"
+    )
 
     assert sse_response.status_code == 200
     assert sse_response.headers["content-type"].startswith("text/event-stream")
@@ -49,6 +51,7 @@ def test_submit_and_get_task_returns_mock_result() -> None:
         params={
             "workflow_id": submitted["workflow_id"],
             "last_event_id": events[0]["event_id"],
+            "live": False,
         },
     )
 
@@ -85,6 +88,25 @@ def test_get_missing_task_returns_404() -> None:
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Task not found."
+
+
+def test_cancel_missing_task_returns_404() -> None:
+    app = create_app(Settings(environment="test", testing=True))
+    client = TestClient(app)
+
+    response = client.post("/api/v1/tasks/task_missing/cancel")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Task not found."
+
+
+def test_invalid_task_mode_returns_validation_error() -> None:
+    app = create_app(Settings(environment="test", testing=True))
+    client = TestClient(app)
+
+    response = client.post("/api/v1/tasks", json={"query": "bad mode", "mode": "dag"})
+
+    assert response.status_code == 422
 
 
 def test_get_missing_latest_checkpoint_returns_404() -> None:

@@ -47,19 +47,19 @@ async def test_task_service_completes_simple_task_with_mock_provider() -> None:
     assert result.metadata["provider"] == "mock"
 
 
-async def test_task_service_turns_unsupported_mode_into_failed_result() -> None:
+async def test_task_service_cancels_queued_task() -> None:
     service = create_task_service()
 
-    handle = await service.submit(TaskRequest(query="run this", mode="dag"))
-    run_result = await service.run_task(handle.task_id)
+    handle = await service.submit(TaskRequest(query="cancel this"))
+    cancel_result = await service.cancel(handle.task_id)
     result = await service.get_result(handle.task_id)
 
     assert handle.status == TaskStatus.QUEUED
-    assert run_result is not None
-    assert run_result.status == TaskStatus.FAILED
+    assert cancel_result is not None
+    assert cancel_result.status == TaskStatus.CANCELLED
     assert result is not None
-    assert result.status == TaskStatus.FAILED
-    assert result.error == "Unsupported task mode: dag"
+    assert result.status == TaskStatus.CANCELLED
+    assert result.error == "Task cancelled."
 
 
 async def test_task_service_completes_react_task_with_calculator() -> None:

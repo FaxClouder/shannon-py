@@ -582,13 +582,15 @@ GitHub 版本管理记录：
 - 已补充任务服务和任务 API 测试。
 - 已将 `TaskService.submit` 调整为只创建 `queued` 任务，任务执行通过 `run_task` 单独推进到 `running`、`completed` 或 `failed`。
 - API 层已通过 FastAPI `BackgroundTasks` 触发任务执行，提交接口返回任务句柄，查询接口读取当前结果。
+- 已将 `TaskRequest.mode` 收紧为枚举，仅支持 `simple` 和 `react`。
+- 已新增 `POST /api/v1/tasks/{task_id}/cancel`，queued 任务可进入 `cancelled` 状态。
 - 已新增 in-memory session history 基础，同一 `session_id` 的后续任务可读取前序 user/assistant 消息。
 - 已新增 in-memory event bus 基础，任务执行会发布 `workflow_started`、`llm_output`、`workflow_completed`、`workflow_failed` 和 `stream_end` 等事件。
 - 已新增 `GET /api/v1/stream/events/{workflow_id}`，作为 SSE 落地前的事件调试查询入口。
 
 验证记录：
 
-- 已执行 `uv run pytest`，结果为 `8 passed`。
+- 已执行 `uv run pytest`，结果为 `23 passed`。
 - 已执行 `uv run ruff check .`，结果为 `All checks passed!`。
 - pytest 当前仍有 FastAPI TestClient 依赖链的 `StarletteDeprecationWarning`，不影响当前 MVP 功能。
 
@@ -645,13 +647,14 @@ GitHub 版本管理记录：
 - `InMemoryEventBus` 已支持按 `last_event_id` 查询后续事件。
 - 已新增 `GET /api/v1/stream/sse?workflow_id=...&last_event_id=...`。
 - 当前 SSE 会 replay 已持久在内存中的 workflow 事件，事件包括 `workflow_started`、`llm_output`、`workflow_completed`、`workflow_failed` 和 `stream_end`。
+- `SSEBroker` 已支持 live 模式，会等待后续事件并在 `stream_end` 后关闭。
 - 已补充 SSE 序列化、resume 和 API 响应测试。
 
 验证记录：
 
-- 已执行 `uv run pytest`，结果为 `12 passed`。
+- 已执行 `uv run pytest`，结果为 `23 passed`。
 - 已执行 `uv run ruff check .`，结果为 `All checks passed!`。
-- Redis event stream、实时阻塞等待、断线续传持久化和 `LLM_PARTIAL` 仍未接入，当前为 MVP replay 实现。
+- Redis event stream、断线续传持久化和 `LLM_PARTIAL` 仍未接入，当前为 MVP in-memory 实现。
 
 ### 里程碑 5：工具与 ReAct
 
@@ -681,7 +684,7 @@ GitHub 版本管理记录：
 
 验证记录：
 
-- 已执行 `uv run pytest`，结果为 `18 passed`。
+- 已执行 `uv run pytest`，结果为 `23 passed`。
 - 已执行 `uv run ruff check .`，结果为 `All checks passed!`。
 - 当前 ReAct 仍是 MVP 规则路由，尚未实现 LLM 驱动的多轮 action/observation loop。
 

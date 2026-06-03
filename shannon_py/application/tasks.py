@@ -30,10 +30,15 @@ class TaskStatus(StrEnum):
     PAUSED = "paused"
 
 
+class TaskMode(StrEnum):
+    SIMPLE = "simple"
+    REACT = "react"
+
+
 class TaskRequest(BaseModel):
     query: str = Field(min_length=1, max_length=100_000)
     session_id: str | None = None
-    mode: str = "simple"
+    mode: TaskMode = TaskMode.SIMPLE
     context: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -110,6 +115,17 @@ class InMemoryTaskRepository:
             record.result = result
         return record
 
+    async def cancel(self, task_id: str, result: TaskResult) -> TaskRecord | None:
+        record = self._records.get(task_id)
+        if record is None:
+            return None
+        if record.status in {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}:
+            return record
+        record.status = TaskStatus.CANCELLED
+        record.result = result
+        record.updated_at = datetime.now(UTC)
+        return record
+
 
 class TaskService:
     def __init__(
@@ -138,7 +154,32 @@ class TaskService:
         record = await self._repository.get(task_id)
         if record is None:
             return None
+        if record.status == TaskStatus.CANCELLED:
+            return record.result
         return await self._run(record)
+
+    async def cancel(self, task_id: str) -> TaskResult | None:
+        record = await self._repository.get(task_id)
+        if record is None:
+            return None
+        if record.result is not None:
+            return record.result
+
+        result = TaskResult(
+            task_id=record.task_id,
+            workflow_id=record.workflow_id,
+            session_id=record.session_id,
+            status=TaskStatus.CANCELLED,
+            error="Task cancelled.",
+            metadata=record.request.metadata,
+        )
+        cancelled = await self._repository.cancel(task_id, result)
+        if cancelled is None:
+            return None
+        await self._save_checkpoint(cancelled, TaskStatus.CANCELLED, result)
+        await self._publish(cancelled, StreamEventType.WORKFLOW_FAILED, {"error": result.error})
+        await self._publish(cancelled, StreamEventType.STREAM_END)
+        return result
 
     async def get_result(self, task_id: str) -> TaskResult | None:
         record = await self._repository.get(task_id)
@@ -161,8 +202,15 @@ class TaskService:
         self,
         workflow_id: str,
         last_event_id: str | None = None,
+        live: bool = False,
+        idle_timeout_seconds: float = 30.0,
     ) -> AsyncIterator[str]:
-        return self._sse_broker.replay(workflow_id, last_event_id=last_event_id)
+        return self._sse_broker.replay(
+            workflow_id,
+            last_event_id=last_event_id,
+            live=live,
+            idle_timeout_seconds=idle_timeout_seconds,
+        )
 
     async def list_session_messages(self, session_id: str) -> list[ConversationMessage]:
         return await self._session_repository.list_messages(session_id)
@@ -194,7 +242,7 @@ class TaskService:
                 **record.request.metadata,
                 **graph_output.metadata,
             }
-            if record.request.mode == "simple":
+            if record.request.mode == TaskMode.SIMPLE:
                 result_metadata.update(
                     {
                         "provider": graph_output.provider,
@@ -257,7 +305,7 @@ class TaskService:
         record: TaskRecord,
         graph_context: dict[str, Any],
     ) -> Any:
-        if record.request.mode == "simple":
+        if record.request.mode == TaskMode.SIMPLE:
             return await self._simple_graph.run(
                 SimpleGraphInput(
                     task_id=record.task_id,
@@ -268,7 +316,7 @@ class TaskService:
                 )
             )
 
-        if record.request.mode == "react":
+        if record.request.mode == TaskMode.REACT:
             graph_output = await self._react_graph.run(
                 ReactGraphInput(
                     task_id=record.task_id,

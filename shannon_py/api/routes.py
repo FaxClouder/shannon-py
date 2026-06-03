@@ -55,6 +55,15 @@ async def get_task(task_id: str, request: Request) -> TaskResult:
     return result
 
 
+@router.post("/api/v1/tasks/{task_id}/cancel", response_model=TaskResult, tags=["tasks"])
+async def cancel_task(task_id: str, request: Request) -> TaskResult:
+    task_service = request.app.state.task_service
+    result = await task_service.cancel(task_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Task not found.")
+    return result
+
+
 @router.get("/api/v1/sessions/{session_id}", response_model=Session, tags=["sessions"])
 async def get_session(session_id: str, request: Request) -> Session:
     task_service = request.app.state.task_service
@@ -121,9 +130,16 @@ async def stream_workflow_events(
     workflow_id: str,
     request: Request,
     last_event_id: str | None = None,
+    live: bool = True,
+    idle_timeout_seconds: float = 30.0,
 ) -> StreamingResponse:
     task_service = request.app.state.task_service
     return StreamingResponse(
-        task_service.stream_sse(workflow_id, last_event_id=last_event_id),
+        task_service.stream_sse(
+            workflow_id,
+            last_event_id=last_event_id,
+            live=live,
+            idle_timeout_seconds=idle_timeout_seconds,
+        ),
         media_type="text/event-stream",
     )
