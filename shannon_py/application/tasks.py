@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
@@ -16,6 +17,7 @@ from shannon_py.memory.session import (
 from shannon_py.orchestration.checkpoints import InMemoryCheckpointManager, WorkflowCheckpoint
 from shannon_py.orchestration.simple_graph import SimpleGraph, SimpleGraphInput
 from shannon_py.streaming.events import InMemoryEventBus, StreamEvent, StreamEventType
+from shannon_py.streaming.sse import SSEBroker
 
 
 class TaskStatus(StrEnum):
@@ -116,12 +118,14 @@ class TaskService:
         session_repository: InMemorySessionRepository,
         event_bus: InMemoryEventBus,
         checkpoint_manager: InMemoryCheckpointManager,
+        sse_broker: SSEBroker,
     ) -> None:
         self._repository = repository
         self._simple_graph = simple_graph
         self._session_repository = session_repository
         self._event_bus = event_bus
         self._checkpoint_manager = checkpoint_manager
+        self._sse_broker = sse_broker
 
     async def submit(self, request: TaskRequest) -> TaskHandle:
         record = await self._repository.create(request)
@@ -149,6 +153,13 @@ class TaskService:
 
     async def list_events(self, workflow_id: str) -> list[StreamEvent]:
         return await self._event_bus.list_events(workflow_id)
+
+    def stream_sse(
+        self,
+        workflow_id: str,
+        last_event_id: str | None = None,
+    ) -> AsyncIterator[str]:
+        return self._sse_broker.replay(workflow_id, last_event_id=last_event_id)
 
     async def list_session_messages(self, session_id: str) -> list[ConversationMessage]:
         return await self._session_repository.list_messages(session_id)

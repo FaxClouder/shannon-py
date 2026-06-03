@@ -1,4 +1,5 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from shannon_py.application.tasks import TaskHandle, TaskRequest, TaskResult
@@ -92,3 +93,16 @@ async def get_latest_workflow_checkpoint(
 async def list_workflow_events(workflow_id: str, request: Request) -> list[StreamEvent]:
     task_service = request.app.state.task_service
     return await task_service.list_events(workflow_id)
+
+
+@router.get("/api/v1/stream/sse", tags=["stream"])
+async def stream_workflow_events(
+    workflow_id: str,
+    request: Request,
+    last_event_id: str | None = None,
+) -> StreamingResponse:
+    task_service = request.app.state.task_service
+    return StreamingResponse(
+        task_service.stream_sse(workflow_id, last_event_id=last_event_id),
+        media_type="text/event-stream",
+    )

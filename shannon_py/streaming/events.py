@@ -32,5 +32,16 @@ class InMemoryEventBus:
     async def publish(self, event: StreamEvent) -> None:
         self._events_by_workflow.setdefault(event.workflow_id, []).append(event)
 
-    async def list_events(self, workflow_id: str) -> list[StreamEvent]:
-        return list(self._events_by_workflow.get(workflow_id, []))
+    async def list_events(
+        self,
+        workflow_id: str,
+        after_event_id: str | None = None,
+    ) -> list[StreamEvent]:
+        events = self._events_by_workflow.get(workflow_id, [])
+        if after_event_id is None:
+            return list(events)
+
+        for index, event in enumerate(events):
+            if event.event_id == after_event_id:
+                return list(events[index + 1 :])
+        return list(events)

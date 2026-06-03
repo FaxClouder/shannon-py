@@ -29,12 +29,32 @@ def test_submit_and_get_task_returns_mock_result() -> None:
     events_response = client.get(f"/api/v1/stream/events/{submitted['workflow_id']}")
 
     assert events_response.status_code == 200
-    assert [event["type"] for event in events_response.json()] == [
+    events = events_response.json()
+    assert [event["type"] for event in events] == [
         "workflow_started",
         "llm_output",
         "workflow_completed",
         "stream_end",
     ]
+
+    sse_response = client.get(f"/api/v1/stream/sse?workflow_id={submitted['workflow_id']}")
+
+    assert sse_response.status_code == 200
+    assert sse_response.headers["content-type"].startswith("text/event-stream")
+    assert "event: workflow_started\n" in sse_response.text
+    assert "event: stream_end\n" in sse_response.text
+
+    resumed_sse_response = client.get(
+        "/api/v1/stream/sse",
+        params={
+            "workflow_id": submitted["workflow_id"],
+            "last_event_id": events[0]["event_id"],
+        },
+    )
+
+    assert resumed_sse_response.status_code == 200
+    assert "event: workflow_started\n" not in resumed_sse_response.text
+    assert "event: llm_output\n" in resumed_sse_response.text
 
     session_response = client.get("/api/v1/sessions/session_route")
 

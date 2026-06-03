@@ -9,6 +9,7 @@ from shannon_py.observability.logging import configure_logging
 from shannon_py.orchestration.checkpoints import InMemoryCheckpointManager
 from shannon_py.orchestration.simple_graph import SimpleGraph
 from shannon_py.streaming.events import InMemoryEventBus
+from shannon_py.streaming.sse import SSEBroker
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -22,12 +23,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url="/redoc",
     )
     app.state.settings = resolved_settings
+    event_bus = InMemoryEventBus()
     app.state.task_service = TaskService(
         repository=InMemoryTaskRepository(),
         simple_graph=SimpleGraph(MockProvider(model=resolved_settings.default_model)),
         session_repository=InMemorySessionRepository(),
-        event_bus=InMemoryEventBus(),
+        event_bus=event_bus,
         checkpoint_manager=InMemoryCheckpointManager(),
+        sse_broker=SSEBroker(event_bus),
     )
     app.include_router(router)
     return app

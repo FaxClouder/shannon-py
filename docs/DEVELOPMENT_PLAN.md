@@ -637,6 +637,22 @@ GitHub 版本管理记录：
 - SSE 可收到 started、partial/output、completed、stream_end。
 - SSE 断线后可用 `last_event_id` resume。
 
+当前状态（2026-06-03）：已完成 in-memory SSE 基础。
+
+已落地内容：
+
+- 已新增 `SSEBroker` 和 SSE 事件序列化函数。
+- `InMemoryEventBus` 已支持按 `last_event_id` 查询后续事件。
+- 已新增 `GET /api/v1/stream/sse?workflow_id=...&last_event_id=...`。
+- 当前 SSE 会 replay 已持久在内存中的 workflow 事件，事件包括 `workflow_started`、`llm_output`、`workflow_completed`、`workflow_failed` 和 `stream_end`。
+- 已补充 SSE 序列化、resume 和 API 响应测试。
+
+验证记录：
+
+- 已执行 `uv run pytest`，结果为 `12 passed`。
+- 已执行 `uv run ruff check .`，结果为 `All checks passed!`。
+- Redis event stream、实时阻塞等待、断线续传持久化和 `LLM_PARTIAL` 仍未接入，当前为 MVP replay 实现。
+
 ### 里程碑 5：工具与 ReAct
 
 交付内容：

@@ -9,15 +9,18 @@ from shannon_py.memory.session import InMemorySessionRepository
 from shannon_py.orchestration.checkpoints import InMemoryCheckpointManager
 from shannon_py.orchestration.simple_graph import SimpleGraph
 from shannon_py.streaming.events import InMemoryEventBus, StreamEventType
+from shannon_py.streaming.sse import SSEBroker
 
 
 def create_task_service() -> TaskService:
+    event_bus = InMemoryEventBus()
     return TaskService(
         repository=InMemoryTaskRepository(),
         simple_graph=SimpleGraph(MockProvider()),
         session_repository=InMemorySessionRepository(),
-        event_bus=InMemoryEventBus(),
+        event_bus=event_bus,
         checkpoint_manager=InMemoryCheckpointManager(),
+        sse_broker=SSEBroker(event_bus),
     )
 
 
