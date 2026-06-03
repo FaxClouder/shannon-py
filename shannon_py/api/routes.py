@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from shannon_py.application.tasks import TaskHandle, TaskRequest, TaskResult
 from shannon_py.memory.session import Session
 from shannon_py.orchestration.checkpoints import WorkflowCheckpoint
+from shannon_py.policy import ApprovalRequest
 from shannon_py.streaming.events import StreamEvent
 from shannon_py.tools import ToolResult, ToolSpec
 
@@ -18,6 +19,7 @@ class HealthResponse(BaseModel):
 
 class ToolExecuteRequest(BaseModel):
     arguments: dict[str, object] = Field(default_factory=dict)
+    approved: bool = False
 
 
 router = APIRouter()
@@ -112,7 +114,15 @@ async def execute_tool(
     request: Request,
 ) -> ToolResult:
     tool_service = request.app.state.tool_service
-    return await tool_service.execute(tool_name, dict(tool_request.arguments))
+    arguments = dict(tool_request.arguments)
+    arguments["approved"] = tool_request.approved
+    return await tool_service.execute(tool_name, arguments)
+
+
+@router.get("/api/v1/approvals", response_model=list[ApprovalRequest], tags=["approvals"])
+async def list_approvals(request: Request) -> list[ApprovalRequest]:
+    tool_service = request.app.state.tool_service
+    return await tool_service.list_approvals()
 
 
 @router.get(

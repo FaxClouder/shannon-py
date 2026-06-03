@@ -15,8 +15,12 @@ from shannon_py.memory.session import (
     Session,
 )
 from shannon_py.orchestration.checkpoints import InMemoryCheckpointManager, WorkflowCheckpoint
+from shannon_py.orchestration.dag_graph import DAGGraph, DAGGraphInput
 from shannon_py.orchestration.react_graph import ReactGraph, ReactGraphInput
+from shannon_py.orchestration.research_graph import ResearchGraph, ResearchGraphInput
+from shannon_py.orchestration.router import WorkflowMode, WorkflowRouter
 from shannon_py.orchestration.simple_graph import SimpleGraph, SimpleGraphInput
+from shannon_py.policy import PolicyEngine
 from shannon_py.streaming.events import InMemoryEventBus, StreamEvent, StreamEventType
 from shannon_py.streaming.sse import SSEBroker
 
@@ -30,15 +34,10 @@ class TaskStatus(StrEnum):
     PAUSED = "paused"
 
 
-class TaskMode(StrEnum):
-    SIMPLE = "simple"
-    REACT = "react"
-
-
 class TaskRequest(BaseModel):
     query: str = Field(min_length=1, max_length=100_000)
     session_id: str | None = None
-    mode: TaskMode = TaskMode.SIMPLE
+    mode: WorkflowMode = WorkflowMode.SIMPLE
     context: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -133,20 +132,31 @@ class TaskService:
         repository: InMemoryTaskRepository,
         simple_graph: SimpleGraph,
         react_graph: ReactGraph,
+        dag_graph: DAGGraph,
+        research_graph: ResearchGraph,
+        workflow_router: WorkflowRouter,
         session_repository: InMemorySessionRepository,
         event_bus: InMemoryEventBus,
         checkpoint_manager: InMemoryCheckpointManager,
         sse_broker: SSEBroker,
+        policy_engine: PolicyEngine,
     ) -> None:
         self._repository = repository
         self._simple_graph = simple_graph
         self._react_graph = react_graph
+        self._dag_graph = dag_graph
+        self._research_graph = research_graph
+        self._workflow_router = workflow_router
         self._session_repository = session_repository
         self._event_bus = event_bus
         self._checkpoint_manager = checkpoint_manager
         self._sse_broker = sse_broker
+        self._policy_engine = policy_engine
 
     async def submit(self, request: TaskRequest) -> TaskHandle:
+        policy_decision = self._policy_engine.validate_task_input(request.query)
+        if not policy_decision.allowed:
+            request.metadata["policy_error"] = policy_decision.reason
         record = await self._repository.create(request)
         return record.to_handle()
 
@@ -230,6 +240,10 @@ class TaskService:
         await self._publish(record, StreamEventType.WORKFLOW_STARTED)
 
         try:
+            policy_error = record.request.metadata.get("policy_error")
+            if isinstance(policy_error, str):
+                raise ValueError(policy_error)
+
             session_history = await self._session_repository.list_messages(record.session_id)
             graph_context = {
                 **record.request.context,
@@ -237,12 +251,22 @@ class TaskService:
                     message.model_dump(mode="json") for message in session_history
                 ],
             }
-            graph_output = await self._run_graph(record, graph_context)
+            route = self._workflow_router.route(
+                record.request.query,
+                record.request.mode,
+                graph_context,
+            )
+            graph_context["route"] = route.model_dump(mode="json")
+            graph_output = await self._run_graph(record, graph_context, route.selected_mode)
             result_metadata = {
                 **record.request.metadata,
                 **graph_output.metadata,
+                "requested_mode": record.request.mode,
+                "selected_mode": route.selected_mode,
+                "complexity_score": route.complexity_score,
+                "route_reason": route.reason,
             }
-            if record.request.mode == TaskMode.SIMPLE:
+            if route.selected_mode == WorkflowMode.SIMPLE:
                 result_metadata.update(
                     {
                         "provider": graph_output.provider,
@@ -304,8 +328,9 @@ class TaskService:
         self,
         record: TaskRecord,
         graph_context: dict[str, Any],
+        selected_mode: WorkflowMode,
     ) -> Any:
-        if record.request.mode == TaskMode.SIMPLE:
+        if selected_mode == WorkflowMode.SIMPLE:
             return await self._simple_graph.run(
                 SimpleGraphInput(
                     task_id=record.task_id,
@@ -316,7 +341,7 @@ class TaskService:
                 )
             )
 
-        if record.request.mode == TaskMode.REACT:
+        if selected_mode == WorkflowMode.REACT:
             graph_output = await self._react_graph.run(
                 ReactGraphInput(
                     task_id=record.task_id,
@@ -343,7 +368,29 @@ class TaskService:
             )
             return graph_output
 
-        raise ValueError(f"Unsupported task mode: {record.request.mode}")
+        if selected_mode == WorkflowMode.DAG:
+            return await self._dag_graph.run(
+                DAGGraphInput(
+                    task_id=record.task_id,
+                    workflow_id=record.workflow_id,
+                    session_id=record.session_id,
+                    query=record.request.query,
+                    context=graph_context,
+                )
+            )
+
+        if selected_mode == WorkflowMode.RESEARCH:
+            return await self._research_graph.run(
+                ResearchGraphInput(
+                    task_id=record.task_id,
+                    workflow_id=record.workflow_id,
+                    session_id=record.session_id,
+                    query=record.request.query,
+                    context=graph_context,
+                )
+            )
+
+        raise ValueError(f"Unsupported task mode: {selected_mode}")
 
     async def _publish(
         self,

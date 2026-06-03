@@ -738,6 +738,23 @@ GitHub 版本管理记录：
 - DAG 支持 parallel fan-out 和 synthesis fan-in。
 - research 输出包含 source metadata。
 
+当前状态（2026-06-03）：已完成 MVP 骨架。
+
+已落地内容：
+
+- 已新增 `ComplexityAnalyzer`、`StrategySelector` 和 `WorkflowRouter`。
+- `TaskRequest.mode` 已支持 `auto`、`simple`、`react`、`dag`、`research`。
+- 已新增 `DAGGraph`，当前按分号/换行拆分步骤并串行执行 simple 子任务后合成结果。
+- 已新增 `ResearchGraph`，当前通过 `MockProvider` 生成研究摘要，并返回 mock source metadata。
+- `TaskService` 已接入 workflow routing，结果 metadata 会记录 `requested_mode`、`selected_mode`、`complexity_score` 和 `route_reason`。
+- 已补充 DAG、Research 和 auto routing 测试。
+
+验证记录：
+
+- 已执行 `uv run pytest`，结果为 `42 passed`。
+- 已执行 `uv run ruff check .`，结果为 `All checks passed!`。
+- 当前 DAG 仍是串行 MVP，尚未实现真正 parallel fan-out/fan-in；Research 仍是 mock source，不做真实检索。
+
 ### 里程碑 8：策略与审批
 
 交付内容：
@@ -753,6 +770,24 @@ GitHub 版本管理记录：
 - token/tool/timeout 超限会停止 workflow。
 - dangerous tool 可触发 approval。
 - pause/resume/cancel 影响运行中的 graph。
+
+当前状态（2026-06-03）：已完成 Policy 与 Approval MVP。
+
+已落地内容：
+
+- 已新增 `PolicyEngine`、`PolicyDecision` 和 `PolicyDecisionStatus`。
+- `PolicyEngine` 已支持任务输入长度校验，以及危险工具审批判断。
+- 已新增 `ApprovalRequest`、`ApprovalStatus` 和 `InMemoryApprovalGate`。
+- `ToolService` 已在执行危险工具前触发 approval gate；未审批时返回受控 `ToolResult`，不会执行工具。
+- 工具执行请求已支持 `approved=true` 作为 MVP 审批通过信号。
+- 已新增 `GET /api/v1/approvals` 查询 approval request。
+- 已补充 policy、approval 和危险工具审批 API 测试。
+
+验证记录：
+
+- 已执行 `uv run pytest`，结果为 `42 passed`。
+- 已执行 `uv run ruff check .`，结果为 `All checks passed!`。
+- 当前尚未实现 token budget、rate limiter、circuit breaker、pause/resume 和持久化审批流。
 
 ### 里程碑 9：Swarm
 

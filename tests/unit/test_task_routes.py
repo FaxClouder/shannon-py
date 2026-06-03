@@ -104,7 +104,7 @@ def test_invalid_task_mode_returns_validation_error() -> None:
     app = create_app(Settings(environment="test", testing=True))
     client = TestClient(app)
 
-    response = client.post("/api/v1/tasks", json={"query": "bad mode", "mode": "dag"})
+    response = client.post("/api/v1/tasks", json={"query": "bad mode", "mode": "swarm"})
 
     assert response.status_code == 422
 
@@ -145,6 +145,43 @@ def test_tool_routes_list_and_execute_calculator() -> None:
 
     assert python_response.status_code == 200
     python_result = python_response.json()
+    assert python_result["success"] is False
+    assert python_result["error"] == "Tool requires approval: python_exec"
+    assert python_result["metadata"]["approval_status"] == "pending"
+
+    approvals_response = client.get("/api/v1/approvals")
+
+    assert approvals_response.status_code == 200
+    assert approvals_response.json()[0]["subject_name"] == "python_exec"
+
+    approved_python_response = client.post(
+        "/api/v1/tools/python_exec/execute",
+        json={
+            "arguments": {"session_id": "session_api_tool", "code": "print('ok')"},
+            "approved": True,
+        },
+    )
+
+    assert approved_python_response.status_code == 200
+    approved_python_result = approved_python_response.json()
+    assert approved_python_result["success"] is True
+    assert approved_python_result["content"] == "ok\n"
+
+
+def test_approved_python_exec_runs() -> None:
+    app = create_app(Settings(environment="test", testing=True))
+    client = TestClient(app)
+
+    python_response = client.post(
+        "/api/v1/tools/python_exec/execute",
+        json={
+            "arguments": {"session_id": "session_api_tool", "code": "print('ok')"},
+            "approved": True,
+        },
+    )
+
+    assert python_response.status_code == 200
+    python_result = python_response.json()
     assert python_result["success"] is True
     assert python_result["content"] == "ok\n"
 
@@ -168,3 +205,22 @@ def test_react_task_uses_calculator_tool() -> None:
     assert result["status"] == "completed"
     assert result["output"] == "Calculator result: 42"
     assert result["metadata"]["tool_name"] == "calculator"
+
+
+def test_dag_and_research_task_modes_are_supported() -> None:
+    app = create_app(Settings(environment="test", testing=True))
+    client = TestClient(app)
+
+    dag = client.post("/api/v1/tasks", json={"query": "a; b", "mode": "dag"}).json()
+    research = client.post(
+        "/api/v1/tasks",
+        json={"query": "research this", "mode": "research"},
+    ).json()
+
+    dag_result = client.get(f"/api/v1/tasks/{dag['task_id']}").json()
+    research_result = client.get(f"/api/v1/tasks/{research['task_id']}").json()
+
+    assert dag_result["metadata"]["selected_mode"] == "dag"
+    assert dag_result["metadata"]["step_count"] == 2
+    assert research_result["metadata"]["selected_mode"] == "research"
+    assert research_result["metadata"]["sources"][0]["source_type"] == "mock"

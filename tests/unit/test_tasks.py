@@ -7,8 +7,12 @@ from shannon_py.application.tasks import (
 from shannon_py.llm.providers import MockProvider
 from shannon_py.memory.session import InMemorySessionRepository
 from shannon_py.orchestration.checkpoints import InMemoryCheckpointManager
+from shannon_py.orchestration.dag_graph import DAGGraph
 from shannon_py.orchestration.react_graph import ReactGraph
+from shannon_py.orchestration.research_graph import ResearchGraph
+from shannon_py.orchestration.router import WorkflowRouter
 from shannon_py.orchestration.simple_graph import SimpleGraph
+from shannon_py.policy import PolicyEngine
 from shannon_py.streaming.events import InMemoryEventBus, StreamEventType
 from shannon_py.streaming.sse import SSEBroker
 from shannon_py.tools import CalculatorTool, ToolExecutor, ToolRegistry
@@ -23,10 +27,14 @@ def create_task_service() -> TaskService:
         repository=InMemoryTaskRepository(),
         simple_graph=SimpleGraph(MockProvider()),
         react_graph=ReactGraph(tool_executor),
+        dag_graph=DAGGraph(SimpleGraph(MockProvider())),
+        research_graph=ResearchGraph(MockProvider()),
+        workflow_router=WorkflowRouter(),
         session_repository=InMemorySessionRepository(),
         event_bus=event_bus,
         checkpoint_manager=InMemoryCheckpointManager(),
         sse_broker=SSEBroker(event_bus),
+        policy_engine=PolicyEngine(),
     )
 
 
@@ -81,6 +89,43 @@ async def test_task_service_completes_react_task_with_calculator() -> None:
         StreamEventType.WORKFLOW_COMPLETED,
         StreamEventType.STREAM_END,
     ]
+
+
+async def test_task_service_completes_dag_task() -> None:
+    service = create_task_service()
+
+    handle = await service.submit(TaskRequest(query="first step; second step", mode="dag"))
+    result = await service.run_task(handle.task_id)
+
+    assert result is not None
+    assert result.status == TaskStatus.COMPLETED
+    assert result.metadata["selected_mode"] == "dag"
+    assert result.metadata["step_count"] == 2
+    assert "1. Mock response for: first step" in (result.output or "")
+
+
+async def test_task_service_completes_research_task() -> None:
+    service = create_task_service()
+
+    handle = await service.submit(TaskRequest(query="research agent runtimes", mode="research"))
+    result = await service.run_task(handle.task_id)
+
+    assert result is not None
+    assert result.status == TaskStatus.COMPLETED
+    assert result.metadata["selected_mode"] == "research"
+    assert result.metadata["sources"][0]["source_type"] == "mock"
+
+
+async def test_task_service_auto_routes_complex_task_to_dag() -> None:
+    service = create_task_service()
+
+    handle = await service.submit(TaskRequest(query="plan one; plan two", mode="auto"))
+    result = await service.run_task(handle.task_id)
+
+    assert result is not None
+    assert result.status == TaskStatus.COMPLETED
+    assert result.metadata["requested_mode"] == "auto"
+    assert result.metadata["selected_mode"] == "dag"
 
 
 async def test_task_service_passes_session_history_to_next_task() -> None:

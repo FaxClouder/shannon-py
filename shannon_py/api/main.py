@@ -8,8 +8,12 @@ from shannon_py.llm.providers import MockProvider
 from shannon_py.memory.session import InMemorySessionRepository
 from shannon_py.observability.logging import configure_logging
 from shannon_py.orchestration.checkpoints import InMemoryCheckpointManager
+from shannon_py.orchestration.dag_graph import DAGGraph
 from shannon_py.orchestration.react_graph import ReactGraph
+from shannon_py.orchestration.research_graph import ResearchGraph
+from shannon_py.orchestration.router import WorkflowRouter
 from shannon_py.orchestration.simple_graph import SimpleGraph
+from shannon_py.policy import InMemoryApprovalGate, PolicyEngine
 from shannon_py.sandbox.python_worker import PythonSandboxWorker
 from shannon_py.sandbox.workspace import WorkspaceManager
 from shannon_py.streaming.events import InMemoryEventBus
@@ -29,6 +33,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = resolved_settings
     event_bus = InMemoryEventBus()
+    policy_engine = PolicyEngine(max_input_chars=resolved_settings.max_input_chars)
+    approval_gate = InMemoryApprovalGate()
     tool_registry = ToolRegistry()
     tool_registry.register(CalculatorTool())
     workspace_manager = WorkspaceManager(resolved_settings.sandbox_workspace_root)
@@ -39,15 +45,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     tool_registry.register(PythonExecTool(python_worker))
     tool_executor = ToolExecutor(tool_registry)
-    app.state.tool_service = ToolService(tool_registry, tool_executor)
+    app.state.tool_service = ToolService(tool_registry, tool_executor, policy_engine, approval_gate)
     app.state.task_service = TaskService(
         repository=InMemoryTaskRepository(),
         simple_graph=SimpleGraph(MockProvider(model=resolved_settings.default_model)),
         react_graph=ReactGraph(tool_executor),
+        dag_graph=DAGGraph(SimpleGraph(MockProvider(model=resolved_settings.default_model))),
+        research_graph=ResearchGraph(MockProvider(model=resolved_settings.default_model)),
+        workflow_router=WorkflowRouter(),
         session_repository=InMemorySessionRepository(),
         event_bus=event_bus,
         checkpoint_manager=InMemoryCheckpointManager(),
         sse_broker=SSEBroker(event_bus),
+        policy_engine=policy_engine,
     )
     app.include_router(router)
     return app
