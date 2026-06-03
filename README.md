@@ -1,8 +1,8 @@
 # Shannon-py
 
-`Shannon-py` 是 Shannon 的全 Python 新内核实现。项目目标是在清晰分层的基础上逐步交付任务编排、工具执行、会话记忆、流式事件和安全沙箱能力。
+`Shannon-py` 是 Shannon 的全 Python 新内核实现。项目目标是在清晰分层的基础上，逐步交付任务编排、工具执行、会话记忆、流式事件和安全沙箱能力。
 
-当前阶段是项目骨架与基础服务准备阶段，已包含：
+当前阶段是任务 MVP 准备阶段，已包含：
 
 - FastAPI 应用入口。
 - 配置层与功能开关默认值。
@@ -31,6 +31,7 @@ uv run uvicorn shannon_py.api.main:app --reload
 
 ```powershell
 $env:UV_CACHE_DIR=".uv-cache"
+$env:UV_PYTHON_INSTALL_DIR=".uv-python"
 $env:UV_PROJECT_ENVIRONMENT=".uv-verify-venv"
 uv sync --python <python.exe> --extra dev
 ```
@@ -44,7 +45,7 @@ curl http://127.0.0.1:8000/health
 运行测试：
 
 ```powershell
-pytest
+uv run pytest
 ```
 
 ## 配置

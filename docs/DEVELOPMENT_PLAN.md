@@ -568,6 +568,25 @@ GitHub 版本管理记录：
 - `POST /api/v1/tasks` 可返回 mock result。
 - task 状态能从 `queued` 进入 `completed` 或 `failed`。
 
+当前状态（2026-06-03）：已完成最小可用链路。
+
+已落地内容：
+
+- 已修复 `README.md` 中文乱码，恢复为 UTF-8 中文说明。
+- 已实现 `TaskRequest`、`TaskHandle`、`TaskStatus`、`TaskResult` 等任务核心类型。
+- 已新增 `InMemoryTaskRepository`，支持任务创建、查询和状态更新。
+- 已新增 `TaskService`，负责提交任务、执行 Simple 工作流并保存结果。
+- 已实现 `MockProvider`，无外部 API key 时可返回稳定 mock 响应。
+- 已实现 `SimpleGraph`，通过统一 provider 接口完成单次模型调用。
+- 已新增 `POST /api/v1/tasks` 和 `GET /api/v1/tasks/{task_id}`。
+- 已补充任务服务和任务 API 测试。
+
+验证记录：
+
+- 已执行 `uv run pytest`，结果为 `6 passed`。
+- 已执行 `uv run ruff check .`，结果为 `All checks passed!`。
+- pytest 当前仍有 FastAPI TestClient 依赖链的 `StarletteDeprecationWarning`，不影响当前 MVP 功能。
+
 ### 里程碑 3：会话与 checkpoint
 
 交付内容：
