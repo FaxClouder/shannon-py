@@ -4,6 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from shannon_py.agent import AgentRole, AgentRuntime, AgentSpec
 from shannon_py.tools.core import ToolExecutor, ToolResult
 
 
@@ -23,30 +24,37 @@ class ReactGraphOutput(BaseModel):
 
 
 class ReactGraph:
-    def __init__(self, tool_executor: ToolExecutor) -> None:
+    def __init__(
+        self,
+        tool_executor: ToolExecutor,
+        runtime: AgentRuntime | None = None,
+    ) -> None:
         self._tool_executor = tool_executor
+        self._runtime = runtime or AgentRuntime(tool_executor=tool_executor)
 
     async def run(self, graph_input: ReactGraphInput) -> ReactGraphOutput:
         expression = _extract_calculator_expression(graph_input.query, graph_input.context)
-        tool_result = await self._tool_executor.execute(
-            "calculator",
-            {"expression": expression},
+        result = await self._runtime.run_react(
+            AgentSpec(role=AgentRole.ASSISTANT, name="react"),
+            graph_input.workflow_id,
+            graph_input.task_id,
+            graph_input.session_id,
+            graph_input.query,
+            graph_input.context,
+            tool_name="calculator",
+            tool_arguments={"expression": expression},
         )
 
-        if tool_result.success:
-            output = f"Calculator result: {tool_result.content}"
-        else:
-            output = f"Calculator failed: {tool_result.error}"
-
         return ReactGraphOutput(
-            output=output,
-            tool_name="calculator",
-            tool_result=tool_result,
-            metadata={
-                "mode": "react",
-                "tool_name": "calculator",
-                "tool_success": tool_result.success,
-            },
+            output=result.output or "",
+            tool_name=result.metadata.get("tool_name", "calculator"),
+            tool_result=ToolResult(
+                success=bool(result.metadata.get("tool_success", False)),
+                content=result.output or "",
+                metadata=result.metadata,
+                error=result.error,
+            ),
+            metadata=result.metadata,
         )
 
 

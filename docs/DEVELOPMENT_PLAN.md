@@ -15,6 +15,33 @@
 
 第一阶段优先交付 Simple 和 ReAct 可用内核；Swarm、深度 Research、OPA 兼容和完整 replay 在基础稳定后再推进。
 
+## 3.1 当前下一阶段路线：Agent Runtime 优先
+
+当前项目已经具备 task、session、checkpoint、SSE、tool、sandbox、policy、swarm 和 observability 的 in-memory 基础。下一阶段不优先引入 PostgreSQL、Redis 或 Qdrant，而是先把 `agent` 层收束成统一运行时，再让 `ReactGraph`、`DAGGraph`、`ResearchGraph` 和 `SwarmCoordinator` 都建立在同一套 `AgentRuntime` 上。
+
+本阶段的目标是把现有“图 + 工具 + policy”骨架，提升成“可循环、可观察、可中断”的 agent 系统，同时保持外部 API 兼容：
+
+- `POST /api/v1/tasks`
+- `GET /api/v1/tasks/{task_id}`
+- `mode=simple|react|dag|research|auto`
+- 工具与 approval 接口 wire shape 不变
+
+当前已经开始落地的方向包括：
+
+- `AgentState`、`AgentSpec`、`AgentResult`
+- `AgentRuntime`、`AgentLoop`、`AgentMailbox`
+- `AgentRole`、`AgentWorkspace`、`AgentPolicy`
+- `ReactGraph`、`DAGGraph`、`ResearchGraph` 收束到统一 runtime
+- `SwarmCoordinator` 使用 runtime 处理 lead/worker 协作
+
+后续将继续补齐：
+
+- loop 上限与 tool call 上限的更严格执行
+- 失败、暂停、恢复状态
+- 更完整的 agent 级事件发布
+- 更真实的 DAG fan-out/fan-in
+- 更真实的 research source collection 与 synthesis
+
 ## 2. 技术栈
 
 默认技术栈如下：

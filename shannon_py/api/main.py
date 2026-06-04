@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from shannon_py.agent import AgentRuntime
 from shannon_py.api.routes import router
 from shannon_py.application.chat import ChatCompletionService
 from shannon_py.application.tasks import InMemoryTaskRepository, TaskService
@@ -21,6 +22,7 @@ from shannon_py.sandbox.python_worker import PythonSandboxWorker
 from shannon_py.sandbox.workspace import WorkspaceManager
 from shannon_py.streaming.events import InMemoryEventBus
 from shannon_py.streaming.sse import SSEBroker
+from shannon_py.swarm import SwarmCoordinator
 from shannon_py.tools import CalculatorTool, PythonExecTool, ToolExecutor, ToolRegistry
 
 
@@ -51,6 +53,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     tool_registry.register(PythonExecTool(python_worker))
     tool_executor = ToolExecutor(tool_registry)
+    mock_provider = MockProvider(model=resolved_settings.default_model)
+    agent_runtime = AgentRuntime(
+        provider=mock_provider,
+        tool_executor=tool_executor,
+    )
     app.state.tool_service = ToolService(
         tool_registry,
         tool_executor,
@@ -60,15 +67,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         run_recorder,
         tracer,
     )
-    app.state.chat_service = ChatCompletionService(
-        MockProvider(model=resolved_settings.default_model)
-    )
+    app.state.chat_service = ChatCompletionService(mock_provider)
+    simple_graph = SimpleGraph(mock_provider, runtime=agent_runtime)
+    react_graph = ReactGraph(tool_executor, runtime=agent_runtime)
+    dag_graph = DAGGraph(SimpleGraph(mock_provider, runtime=agent_runtime))
+    research_graph = ResearchGraph(mock_provider, runtime=agent_runtime)
     app.state.task_service = TaskService(
         repository=InMemoryTaskRepository(),
-        simple_graph=SimpleGraph(MockProvider(model=resolved_settings.default_model)),
-        react_graph=ReactGraph(tool_executor),
-        dag_graph=DAGGraph(SimpleGraph(MockProvider(model=resolved_settings.default_model))),
-        research_graph=ResearchGraph(MockProvider(model=resolved_settings.default_model)),
+        simple_graph=simple_graph,
+        react_graph=react_graph,
+        dag_graph=dag_graph,
+        research_graph=research_graph,
         workflow_router=WorkflowRouter(),
         session_repository=InMemorySessionRepository(),
         event_bus=event_bus,
@@ -79,6 +88,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         run_recorder=run_recorder,
         tracer=tracer,
     )
+    app.state.agent_runtime = agent_runtime
+    app.state.swarm_coordinator = SwarmCoordinator(runtime=agent_runtime)
     app.state.metrics = metrics
     app.state.run_recorder = run_recorder
     app.state.tracer = tracer

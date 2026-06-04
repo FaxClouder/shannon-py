@@ -4,7 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from shannon_py.llm.providers import LLMProvider, LLMRequest
+from shannon_py.agent import AgentRole, AgentRuntime, AgentSpec
+from shannon_py.llm.providers import LLMProvider
 
 
 class ResearchGraphInput(BaseModel):
@@ -21,15 +22,22 @@ class ResearchGraphOutput(BaseModel):
 
 
 class ResearchGraph:
-    def __init__(self, provider: LLMProvider) -> None:
+    def __init__(
+        self,
+        provider: LLMProvider,
+        runtime: AgentRuntime | None = None,
+    ) -> None:
         self._provider = provider
+        self._runtime = runtime or AgentRuntime(provider=provider)
 
     async def run(self, graph_input: ResearchGraphInput) -> ResearchGraphOutput:
-        response = await self._provider.complete(
-            LLMRequest(
-                prompt=f"Research summary request: {graph_input.query}",
-                context=graph_input.context,
-            )
+        result = await self._runtime.run_research(
+            AgentSpec(role=AgentRole.RESEARCHER, name="research"),
+            graph_input.workflow_id,
+            graph_input.task_id,
+            graph_input.session_id,
+            graph_input.query,
+            graph_input.context,
         )
         sources = [
             {
@@ -39,11 +47,6 @@ class ResearchGraph:
             }
         ]
         return ResearchGraphOutput(
-            output=f"Research summary:\n{response.content}",
-            metadata={
-                "mode": "research",
-                "sources": sources,
-                "provider": response.provider,
-                "model": response.model,
-            },
+            output=result.output or "",
+            metadata={**result.metadata, "mode": "research", "sources": sources},
         )
