@@ -806,6 +806,21 @@ GitHub 版本管理记录：
 - agent 能互发消息和发布 findings。
 - swarm 能收敛并生成最终答案。
 
+当前状态（2026-06-04）：已完成 swarm MVP 骨架。
+
+已落地内容：
+
+- 已新增 `LeadAgent`、`SwarmCoordinator`、`TaskBoard`、`Mailbox`、`SharedWorkspace`、`DynamicSpawnManager`、`ConvergenceDetector` 的内存骨架。
+- `SwarmCoordinator` 支持创建 swarm、分配任务、发送消息和收敛检查。
+- `TaskBoard` 可记录待办、进行中和完成中的 swarm 任务。
+- `Mailbox` 可在 agent 间传递消息。
+- 当前 swarm 仍是单进程内存协调，尚未实现真实 agent spawn/fan-out/fan-in 调度。
+
+验证记录：
+
+- 已执行 `uv run pytest`，结果为 `46 passed`。
+- 已执行 `uv run ruff check .`，结果为 `All checks passed!`。
+
 ### 里程碑 10：生产加固
 
 交付内容：
@@ -821,6 +836,23 @@ GitHub 版本管理记录：
 - 支持基础生产部署。
 - 核心接口有回归测试。
 - 常见失败路径有明确错误和事件记录。
+
+当前状态（2026-06-04）：已完成最小生产加固骨架。
+
+已落地内容：
+
+- 已新增 `/metrics`，输出内存聚合的 Prometheus 风格指标文本。
+- 已新增 `RunRecorder` 和 `InMemoryTracer`，可记录任务、工具和审批相关运行痕迹。
+- 已新增 OpenAI-compatible `POST /v1/chat/completions`，当前通过 `MockProvider` 返回 completion。
+- 任务和工具执行已接入 metrics、run record 和 trace record。
+- 已新增 `/api/v1/runs` 和 `/api/v1/traces` 只读接口用于调试和验证。
+- 已补充 metrics、OpenAI-compatible chat、run/trace 查询测试。
+
+验证记录：
+
+- 已执行 `uv run pytest`，结果为 `46 passed`。
+- 已执行 `uv run ruff check .`，结果为 `All checks passed!`。
+- 当前尚未引入 Prometheus/OpenTelemetry 外部依赖，也未写入生产部署文档。
 
 ## 7. 测试计划
 

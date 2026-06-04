@@ -1,12 +1,15 @@
 from fastapi import FastAPI
 
 from shannon_py.api.routes import router
+from shannon_py.application.chat import ChatCompletionService
 from shannon_py.application.tasks import InMemoryTaskRepository, TaskService
 from shannon_py.application.tools import ToolService
 from shannon_py.config import Settings, get_settings
 from shannon_py.llm.providers import MockProvider
 from shannon_py.memory.session import InMemorySessionRepository
+from shannon_py.observability import InMemoryTracer, RunRecorder
 from shannon_py.observability.logging import configure_logging
+from shannon_py.observability.metrics import InMemoryMetricsRegistry
 from shannon_py.orchestration.checkpoints import InMemoryCheckpointManager
 from shannon_py.orchestration.dag_graph import DAGGraph
 from shannon_py.orchestration.react_graph import ReactGraph
@@ -32,6 +35,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url="/redoc",
     )
     app.state.settings = resolved_settings
+    metrics = InMemoryMetricsRegistry()
+    run_recorder = RunRecorder()
+    tracer = InMemoryTracer()
     event_bus = InMemoryEventBus()
     policy_engine = PolicyEngine(max_input_chars=resolved_settings.max_input_chars)
     approval_gate = InMemoryApprovalGate()
@@ -45,7 +51,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     tool_registry.register(PythonExecTool(python_worker))
     tool_executor = ToolExecutor(tool_registry)
-    app.state.tool_service = ToolService(tool_registry, tool_executor, policy_engine, approval_gate)
+    app.state.tool_service = ToolService(
+        tool_registry,
+        tool_executor,
+        policy_engine,
+        approval_gate,
+        metrics,
+        run_recorder,
+        tracer,
+    )
+    app.state.chat_service = ChatCompletionService(
+        MockProvider(model=resolved_settings.default_model)
+    )
     app.state.task_service = TaskService(
         repository=InMemoryTaskRepository(),
         simple_graph=SimpleGraph(MockProvider(model=resolved_settings.default_model)),
@@ -58,7 +75,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         checkpoint_manager=InMemoryCheckpointManager(),
         sse_broker=SSEBroker(event_bus),
         policy_engine=policy_engine,
+        metrics=metrics,
+        run_recorder=run_recorder,
+        tracer=tracer,
     )
+    app.state.metrics = metrics
+    app.state.run_recorder = run_recorder
+    app.state.tracer = tracer
     app.include_router(router)
     return app
 

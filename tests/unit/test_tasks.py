@@ -6,6 +6,9 @@ from shannon_py.application.tasks import (
 )
 from shannon_py.llm.providers import MockProvider
 from shannon_py.memory.session import InMemorySessionRepository
+from shannon_py.observability.metrics import InMemoryMetricsRegistry
+from shannon_py.observability.runs import RunRecorder
+from shannon_py.observability.tracing import InMemoryTracer
 from shannon_py.orchestration.checkpoints import InMemoryCheckpointManager
 from shannon_py.orchestration.dag_graph import DAGGraph
 from shannon_py.orchestration.react_graph import ReactGraph
@@ -35,6 +38,9 @@ def create_task_service() -> TaskService:
         checkpoint_manager=InMemoryCheckpointManager(),
         sse_broker=SSEBroker(event_bus),
         policy_engine=PolicyEngine(),
+        metrics=InMemoryMetricsRegistry(),
+        run_recorder=RunRecorder(),
+        tracer=InMemoryTracer(),
     )
 
 

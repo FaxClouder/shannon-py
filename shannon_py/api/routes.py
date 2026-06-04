@@ -1,9 +1,11 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from shannon_py.application.chat import ChatCompletionRequest, ChatCompletionResponse
 from shannon_py.application.tasks import TaskHandle, TaskRequest, TaskResult
 from shannon_py.memory.session import Session
+from shannon_py.observability import RunRecord, TraceSpan
 from shannon_py.orchestration.checkpoints import WorkflowCheckpoint
 from shannon_py.policy import ApprovalRequest
 from shannon_py.streaming.events import StreamEvent
@@ -34,6 +36,12 @@ async def health(request: Request) -> HealthResponse:
         environment=settings.environment,
         version="0.1.0",
     )
+
+
+@router.get("/metrics", response_class=PlainTextResponse, tags=["system"])
+async def metrics(request: Request) -> str:
+    registry = request.app.state.metrics
+    return registry.render_prometheus_text()
 
 
 @router.post("/api/v1/tasks", response_model=TaskHandle, tags=["tasks"])
@@ -123,6 +131,31 @@ async def execute_tool(
 async def list_approvals(request: Request) -> list[ApprovalRequest]:
     tool_service = request.app.state.tool_service
     return await tool_service.list_approvals()
+
+
+@router.get("/api/v1/runs", response_model=list[RunRecord], tags=["observability"])
+async def list_runs(request: Request) -> list[RunRecord]:
+    run_recorder = request.app.state.run_recorder
+    return await run_recorder.list_runs()
+
+
+@router.get("/api/v1/traces", response_model=list[TraceSpan], tags=["observability"])
+async def list_traces(request: Request) -> list[TraceSpan]:
+    tracer = request.app.state.tracer
+    return await tracer.list_spans()
+
+
+@router.post(
+    "/v1/chat/completions",
+    response_model=ChatCompletionResponse,
+    tags=["openai-compatible"],
+)
+async def chat_completions(
+    chat_request: ChatCompletionRequest,
+    request: Request,
+) -> ChatCompletionResponse:
+    chat_service = request.app.state.chat_service
+    return await chat_service.complete(chat_request)
 
 
 @router.get(

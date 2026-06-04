@@ -14,6 +14,9 @@ from shannon_py.memory.session import (
     MessageRole,
     Session,
 )
+from shannon_py.observability.metrics import InMemoryMetricsRegistry
+from shannon_py.observability.runs import RunRecorder
+from shannon_py.observability.tracing import InMemoryTracer
 from shannon_py.orchestration.checkpoints import InMemoryCheckpointManager, WorkflowCheckpoint
 from shannon_py.orchestration.dag_graph import DAGGraph, DAGGraphInput
 from shannon_py.orchestration.react_graph import ReactGraph, ReactGraphInput
@@ -140,6 +143,9 @@ class TaskService:
         checkpoint_manager: InMemoryCheckpointManager,
         sse_broker: SSEBroker,
         policy_engine: PolicyEngine,
+        metrics: InMemoryMetricsRegistry | None = None,
+        run_recorder: RunRecorder | None = None,
+        tracer: InMemoryTracer | None = None,
     ) -> None:
         self._repository = repository
         self._simple_graph = simple_graph
@@ -152,12 +158,18 @@ class TaskService:
         self._checkpoint_manager = checkpoint_manager
         self._sse_broker = sse_broker
         self._policy_engine = policy_engine
+        self._metrics = metrics
+        self._run_recorder = run_recorder
+        self._tracer = tracer
 
     async def submit(self, request: TaskRequest) -> TaskHandle:
         policy_decision = self._policy_engine.validate_task_input(request.query)
         if not policy_decision.allowed:
             request.metadata["policy_error"] = policy_decision.reason
         record = await self._repository.create(request)
+        self._record_metric("tasks_submitted")
+        await self._record_run("task", record.task_id, "submitted", {"mode": request.mode})
+        await self._record_trace("task.submit", record.task_id, "submitted", {"mode": request.mode})
         return record.to_handle()
 
     async def run_task(self, task_id: str) -> TaskResult | None:
@@ -166,7 +178,10 @@ class TaskService:
             return None
         if record.status == TaskStatus.CANCELLED:
             return record.result
-        return await self._run(record)
+        result = await self._run(record)
+        await self._record_run("task", record.task_id, result.status, result.metadata)
+        await self._record_trace("task.run", record.task_id, result.status, result.metadata)
+        return result
 
     async def cancel(self, task_id: str) -> TaskResult | None:
         record = await self._repository.get(task_id)
@@ -186,6 +201,9 @@ class TaskService:
         cancelled = await self._repository.cancel(task_id, result)
         if cancelled is None:
             return None
+        self._record_metric("tasks_cancelled")
+        await self._record_run("task", task_id, "cancelled", result.metadata)
+        await self._record_trace("task.cancel", task_id, "cancelled", result.metadata)
         await self._save_checkpoint(cancelled, TaskStatus.CANCELLED, result)
         await self._publish(cancelled, StreamEventType.WORKFLOW_FAILED, {"error": result.error})
         await self._publish(cancelled, StreamEventType.STREAM_END)
@@ -236,6 +254,7 @@ class TaskService:
 
     async def _run(self, record: TaskRecord) -> TaskResult:
         await self._repository.update_status(record.task_id, TaskStatus.RUNNING)
+        self._record_metric("tasks_running")
         await self._save_checkpoint(record, TaskStatus.RUNNING)
         await self._publish(record, StreamEventType.WORKFLOW_STARTED)
 
@@ -283,6 +302,9 @@ class TaskService:
                 metadata=result_metadata,
             )
             await self._repository.update_status(record.task_id, TaskStatus.COMPLETED, result)
+            self._record_metric("tasks_completed")
+            await self._record_run("task", record.task_id, "completed", result.metadata)
+            await self._record_trace("task.complete", record.task_id, "completed", result.metadata)
             await self._save_checkpoint(record, TaskStatus.COMPLETED, result)
             await self._session_repository.append_message(
                 record.session_id,
@@ -319,6 +341,9 @@ class TaskService:
                 metadata=record.request.metadata,
             )
             await self._repository.update_status(record.task_id, TaskStatus.FAILED, result)
+            self._record_metric("tasks_failed")
+            await self._record_run("task", record.task_id, "failed", result.metadata)
+            await self._record_trace("task.fail", record.task_id, "failed", result.metadata)
             await self._save_checkpoint(record, TaskStatus.FAILED, result)
             await self._publish(record, StreamEventType.WORKFLOW_FAILED, {"error": result.error})
             await self._publish(record, StreamEventType.STREAM_END)
@@ -406,6 +431,30 @@ class TaskService:
                 payload=payload or {},
             )
         )
+
+    def _record_metric(self, name: str) -> None:
+        if self._metrics is not None:
+            self._metrics.inc(name)
+
+    async def _record_run(
+        self,
+        kind: str,
+        subject_id: str,
+        status: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        if self._run_recorder is not None:
+            await self._run_recorder.record(kind, subject_id, status, metadata)
+
+    async def _record_trace(
+        self,
+        name: str,
+        subject_id: str,
+        status: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        if self._tracer is not None:
+            await self._tracer.record_span(name, subject_id, status, metadata)
 
     async def _save_checkpoint(
         self,

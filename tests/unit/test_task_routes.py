@@ -224,3 +224,44 @@ def test_dag_and_research_task_modes_are_supported() -> None:
     assert dag_result["metadata"]["step_count"] == 2
     assert research_result["metadata"]["selected_mode"] == "research"
     assert research_result["metadata"]["sources"][0]["source_type"] == "mock"
+
+
+def test_metrics_and_run_records_are_exposed() -> None:
+    app = create_app(Settings(environment="test", testing=True))
+    client = TestClient(app)
+
+    client.post("/api/v1/tasks", json={"query": "metrics test"})
+    client.post("/api/v1/tools/calculator/execute", json={"arguments": {"expression": "1+1"}})
+
+    metrics_response = client.get("/metrics")
+    runs_response = client.get("/api/v1/runs")
+    traces_response = client.get("/api/v1/traces")
+
+    assert metrics_response.status_code == 200
+    assert "tasks_submitted" in metrics_response.text
+    assert "tool_calls" in metrics_response.text
+    assert runs_response.status_code == 200
+    assert len(runs_response.json()) >= 1
+    assert traces_response.status_code == 200
+    assert len(traces_response.json()) >= 1
+
+
+def test_openai_compatible_chat_completions_returns_mock_response() -> None:
+    app = create_app(Settings(environment="test", testing=True))
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "mock-default",
+            "messages": [
+                {"role": "user", "content": "Say hello"},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["object"] == "chat.completion"
+    assert payload["choices"][0]["message"]["role"] == "assistant"
+    assert "Mock response for:" in payload["choices"][0]["message"]["content"]
