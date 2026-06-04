@@ -39,14 +39,13 @@ class ResearchGraph:
             graph_input.query,
             graph_input.context,
         )
-        sources = [
-            {
-                "title": "Mock internal research source",
-                "source_type": "mock",
-                "url": None,
-            }
-        ]
+        sources = result.metadata.get("sources", [])
         return ResearchGraphOutput(
             output=result.output or "",
-            metadata={**result.metadata, "mode": "research", "sources": sources},
+            metadata={
+                **result.metadata,
+                "mode": "research",
+                "sources": sources,
+                "token_usage": result.token_usage,
+            },
         )

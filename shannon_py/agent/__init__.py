@@ -1,6 +1,7 @@
 from shannon_py.agent.core import (
     AgentAction,
     AgentActionType,
+    AgentFinding,
     AgentLoop,
     AgentMailbox,
     AgentMessage,
@@ -17,6 +18,7 @@ from shannon_py.agent.core import (
 __all__ = [
     "AgentAction",
     "AgentActionType",
+    "AgentFinding",
     "AgentLoop",
     "AgentMailbox",
     "AgentMessage",

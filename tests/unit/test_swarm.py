@@ -23,3 +23,14 @@ def test_swarm_coordinator_records_messages_and_convergence() -> None:
     assert message.content == "done"
     assert coordinator.mailbox.inbox("lead")[0].content == "done"
     assert coordinator.converged() is True
+
+
+async def test_swarm_coordinator_executes_worker_tasks_with_runtime() -> None:
+    coordinator = SwarmCoordinator()
+
+    results = await coordinator.execute_pending_tasks("first; second")
+
+    assert len(results) == 2
+    assert coordinator.converged() is True
+    assert len(coordinator.mailbox.inbox("lead")) == 2
+    assert coordinator.workspace.get("results") == results

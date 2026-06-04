@@ -4,6 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from shannon_py.agent import AgentRole, AgentRuntime, AgentSpec
 from shannon_py.orchestration.simple_graph import SimpleGraph, SimpleGraphInput
 
 
@@ -21,13 +22,37 @@ class DAGGraphOutput(BaseModel):
 
 
 class DAGGraph:
-    def __init__(self, simple_graph: SimpleGraph) -> None:
+    def __init__(
+        self,
+        simple_graph: SimpleGraph,
+        runtime: AgentRuntime | None = None,
+    ) -> None:
         self._simple_graph = simple_graph
+        self._runtime = runtime or simple_graph.runtime
 
     async def run(self, graph_input: DAGGraphInput) -> DAGGraphOutput:
         steps = _split_steps(graph_input.query)
-        outputs: list[str] = []
+        result = await self._runtime.run_dag(
+            AgentSpec(role=AgentRole.LEAD, name="dag-lead"),
+            graph_input.workflow_id,
+            graph_input.task_id,
+            graph_input.session_id,
+            steps,
+            graph_input.context,
+        )
 
+        if result.status == "completed":
+            return DAGGraphOutput(
+                output=result.output or "",
+                metadata={
+                    **result.metadata,
+                    "mode": "dag",
+                    "step_count": len(steps),
+                    "token_usage": result.token_usage,
+                },
+            )
+
+        outputs: list[str] = []
         for index, step in enumerate(steps, start=1):
             result = await self._simple_graph.run(
                 SimpleGraphInput(

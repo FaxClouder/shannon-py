@@ -33,14 +33,16 @@
 - `AgentRole`、`AgentWorkspace`、`AgentPolicy`
 - `ReactGraph`、`DAGGraph`、`ResearchGraph` 收束到统一 runtime
 - `SwarmCoordinator` 使用 runtime 处理 lead/worker 协作
+- DAG worker findings、Research query expansion、source metadata 和基础 token usage 已进入 runtime 结果
+- Swarm 已能通过 runtime 执行 worker 子任务，并通过 mailbox 向 lead 汇报 findings
 
 后续将继续补齐：
 
 - loop 上限与 tool call 上限的更严格执行
 - 失败、暂停、恢复状态
 - 更完整的 agent 级事件发布
-- 更真实的 DAG fan-out/fan-in
-- 更真实的 research source collection 与 synthesis
+- DAG 并发 fan-out/fan-in
+- 真实 research source collection 与 citation synthesis
 
 ## 2. 技术栈
 
@@ -765,7 +767,7 @@ GitHub 版本管理记录：
 - DAG 支持 parallel fan-out 和 synthesis fan-in。
 - research 输出包含 source metadata。
 
-当前状态（2026-06-03）：已完成 MVP 骨架。
+当前状态（2026-06-04）：已完成 AgentRuntime 驱动的 MVP 骨架。
 
 已落地内容：
 
@@ -773,14 +775,16 @@ GitHub 版本管理记录：
 - `TaskRequest.mode` 已支持 `auto`、`simple`、`react`、`dag`、`research`。
 - 已新增 `DAGGraph`，当前按分号/换行拆分步骤并串行执行 simple 子任务后合成结果。
 - 已新增 `ResearchGraph`，当前通过 `MockProvider` 生成研究摘要，并返回 mock source metadata。
+- `DAGGraph` 已通过 `AgentRuntime` 创建 worker 子 agent，收集 worker findings 后进行 ordered synthesis。
+- `ResearchGraph` 已通过 `AgentRuntime` 生成 query expansion、mock source metadata 和基础 token usage。
 - `TaskService` 已接入 workflow routing，结果 metadata 会记录 `requested_mode`、`selected_mode`、`complexity_score` 和 `route_reason`。
 - 已补充 DAG、Research 和 auto routing 测试。
 
 验证记录：
 
-- 已执行 `uv run pytest`，结果为 `42 passed`。
+- 已执行 `uv run pytest`，结果为 `52 passed`。
 - 已执行 `uv run ruff check .`，结果为 `All checks passed!`。
-- 当前 DAG 仍是串行 MVP，尚未实现真正 parallel fan-out/fan-in；Research 仍是 mock source，不做真实检索。
+- 当前 DAG 已具备 worker findings 结构，但仍是顺序执行，尚未实现真正 parallel fan-out/fan-in；Research 仍是 mock source，不做真实检索。
 
 ### 里程碑 8：策略与审批
 
@@ -833,19 +837,21 @@ GitHub 版本管理记录：
 - agent 能互发消息和发布 findings。
 - swarm 能收敛并生成最终答案。
 
-当前状态（2026-06-04）：已完成 swarm MVP 骨架。
+当前状态（2026-06-04）：已完成 AgentRuntime 驱动的 swarm MVP 骨架。
 
 已落地内容：
 
 - 已新增 `LeadAgent`、`SwarmCoordinator`、`TaskBoard`、`Mailbox`、`SharedWorkspace`、`DynamicSpawnManager`、`ConvergenceDetector` 的内存骨架。
 - `SwarmCoordinator` 支持创建 swarm、分配任务、发送消息和收敛检查。
+- `SwarmCoordinator` 已支持通过 `AgentRuntime` 执行 worker 子任务，并将 findings 通过 mailbox 回传 lead。
 - `TaskBoard` 可记录待办、进行中和完成中的 swarm 任务。
 - `Mailbox` 可在 agent 间传递消息。
-- 当前 swarm 仍是单进程内存协调，尚未实现真实 agent spawn/fan-out/fan-in 调度。
+- `SharedWorkspace` 可保存 objective 和 worker result 汇总。
+- 当前 swarm 仍是单进程内存协调，尚未实现并发 agent spawn/fan-out/fan-in 调度。
 
 验证记录：
 
-- 已执行 `uv run pytest`，结果为 `46 passed`。
+- 已执行 `uv run pytest`，结果为 `52 passed`。
 - 已执行 `uv run ruff check .`，结果为 `All checks passed!`。
 
 ### 里程碑 10：生产加固

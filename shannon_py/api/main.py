@@ -70,7 +70,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.chat_service = ChatCompletionService(mock_provider)
     simple_graph = SimpleGraph(mock_provider, runtime=agent_runtime)
     react_graph = ReactGraph(tool_executor, runtime=agent_runtime)
-    dag_graph = DAGGraph(SimpleGraph(mock_provider, runtime=agent_runtime))
+    dag_graph = DAGGraph(
+        SimpleGraph(mock_provider, runtime=agent_runtime),
+        runtime=agent_runtime,
+    )
     research_graph = ResearchGraph(mock_provider, runtime=agent_runtime)
     app.state.task_service = TaskService(
         repository=InMemoryTaskRepository(),

@@ -58,6 +58,41 @@ async def test_agent_runtime_runs_react_with_calculator() -> None:
     assert result.metadata["tool_success"] is True
 
 
+async def test_agent_runtime_runs_dag_with_worker_findings() -> None:
+    runtime = AgentRuntime(provider=MockProvider())
+
+    result = await runtime.run_dag(
+        AgentSpec(role=AgentRole.LEAD, name="lead"),
+        workflow_id="workflow_1",
+        task_id="task_1",
+        session_id="session_1",
+        steps=["first step", "second step"],
+    )
+
+    assert result.status == AgentStatus.COMPLETED
+    assert result.metadata["finding_count"] == 2
+    assert len(result.metadata["child_agents"]) == 2
+    assert result.token_usage["total_tokens"] > 0
+    assert "1. Mock response for: first step" in (result.output or "")
+
+
+async def test_agent_runtime_runs_research_with_sources_and_token_usage() -> None:
+    runtime = AgentRuntime(provider=MockProvider())
+
+    result = await runtime.run_research(
+        AgentSpec(role=AgentRole.RESEARCHER, name="research"),
+        workflow_id="workflow_1",
+        task_id="task_1",
+        session_id="session_1",
+        query="agent runtime",
+    )
+
+    assert result.status == AgentStatus.COMPLETED
+    assert len(result.metadata["expanded_queries"]) == 3
+    assert result.metadata["sources"][0]["source_type"] == "mock"
+    assert result.token_usage["total_tokens"] > 0
+
+
 def test_agent_mailbox_delivers_messages() -> None:
     mailbox = AgentMailbox()
     message = AgentMessage(sender="agent_a", recipient="agent_b", content="findings")

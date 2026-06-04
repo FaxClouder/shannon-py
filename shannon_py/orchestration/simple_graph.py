@@ -32,6 +32,10 @@ class SimpleGraph:
         self._provider = provider
         self._runtime = runtime or AgentRuntime(provider=provider)
 
+    @property
+    def runtime(self) -> AgentRuntime:
+        return self._runtime
+
     async def run(self, graph_input: SimpleGraphInput) -> SimpleGraphOutput:
         result = await self._runtime.run_simple(
             AgentSpec(role=AgentRole.ASSISTANT, name="simple"),

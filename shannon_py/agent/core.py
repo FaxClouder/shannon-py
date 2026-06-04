@@ -87,6 +87,14 @@ class AgentResult(BaseModel):
     error: str | None = None
 
 
+class AgentFinding(BaseModel):
+    agent_id: str
+    role: AgentRole
+    task_id: str
+    content: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class AgentPolicy(BaseModel):
     max_loop_count: int = Field(default=15, ge=1)
     max_tool_calls: int = Field(default=20, ge=0)
@@ -211,6 +219,7 @@ class AgentRuntime:
                 LLMRequest(prompt=prompt, context=context or {})
             )
             state.final_response = response.content
+            state.token_usage = _estimate_token_usage(prompt, response.content)
             state.metadata.update(
                 {
                     "provider": response.provider,
@@ -220,6 +229,7 @@ class AgentRuntime:
             )
         else:
             state.final_response = prompt
+            state.token_usage = _estimate_token_usage(prompt, prompt)
         state.status = AgentStatus.COMPLETED
         return self._to_result(state)
 
@@ -235,6 +245,16 @@ class AgentRuntime:
         tool_arguments: dict[str, Any] | None = None,
     ) -> AgentResult:
         state = self.build_state(spec, workflow_id, task_id, session_id, query, context)
+        if self._tool_executor is None:
+            self._loop.step(
+                state,
+                AgentAction(
+                    type=AgentActionType.ERROR,
+                    content="Agent runtime has no tool executor.",
+                ),
+            )
+            return self._to_result(state)
+
         self._loop.step(
             state,
             AgentAction(
@@ -271,6 +291,87 @@ class AgentRuntime:
         )
         return self._to_result(state)
 
+    async def run_dag(
+        self,
+        spec: AgentSpec,
+        workflow_id: str,
+        task_id: str,
+        session_id: str,
+        steps: list[str],
+        context: dict[str, Any] | None = None,
+    ) -> AgentResult:
+        state = self.build_state(
+            spec,
+            workflow_id,
+            task_id,
+            session_id,
+            "\n".join(steps),
+            context,
+        )
+        findings: list[AgentFinding] = []
+        total_token_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+        for index, step in enumerate(steps, start=1):
+            worker = AgentSpec(
+                role=AgentRole.WORKER,
+                name=f"dag-worker-{index}",
+                max_loop_count=spec.max_loop_count,
+                max_tool_calls=spec.max_tool_calls,
+            )
+            child_result = await self.run_dag_step(
+                worker,
+                workflow_id=workflow_id,
+                task_id=f"{task_id}_step_{index}",
+                session_id=session_id,
+                query=step,
+                context={**(context or {}), "dag_step": index},
+            )
+            content = child_result.output or child_result.error or ""
+            finding = AgentFinding(
+                agent_id=child_result.agent_id,
+                role=AgentRole.WORKER,
+                task_id=child_result.task_id,
+                content=content,
+                metadata={"index": index, **child_result.metadata},
+            )
+            findings.append(finding)
+            self._mailbox.send(
+                AgentMessage(
+                    sender=child_result.agent_id,
+                    recipient=spec.agent_id,
+                    content=content,
+                    metadata={"task_id": child_result.task_id, "index": index},
+                )
+            )
+            _merge_token_usage(total_token_usage, child_result.token_usage)
+
+        output = "\n".join(
+            f"{index}. {finding.content}" for index, finding in enumerate(findings, start=1)
+        )
+        self._workspace.publish(
+            f"{workflow_id}:dag_findings",
+            [finding.model_dump(mode="json") for finding in findings],
+        )
+        self._loop.step(
+            state,
+            AgentAction(
+                type=AgentActionType.FINAL_ANSWER,
+                content=output,
+                metadata={"finding_count": len(findings)},
+            ),
+        )
+        state.token_usage = total_token_usage
+        state.metadata.update(
+            {
+                "child_agents": [
+                    finding.model_dump(mode="json") for finding in findings
+                ],
+                "finding_count": len(findings),
+                "synthesis": "ordered_findings",
+            }
+        )
+        return self._to_result(state)
+
     async def run_dag_step(
         self,
         spec: AgentSpec,
@@ -293,31 +394,60 @@ class AgentRuntime:
     ) -> AgentResult:
         state = self.build_state(spec, workflow_id, task_id, session_id, query, context)
         if self._provider is not None:
+            expanded_queries = _expand_research_queries(query)
+            sources = [
+                {
+                    "title": f"Mock source for {expanded_query}",
+                    "source_type": "mock",
+                    "url": None,
+                    "query": expanded_query,
+                }
+                for expanded_query in expanded_queries
+            ]
             response = await self._provider.complete(
                 LLMRequest(
                     prompt=f"Research summary request: {query}",
-                    context=context or {},
+                    context={**(context or {}), "sources": sources},
                 )
             )
             state.final_response = f"Research summary:\n{response.content}"
+            state.token_usage = _estimate_token_usage(query, state.final_response)
             state.metadata.update(
                 {
                     "provider": response.provider,
                     "model": response.model,
+                    "expanded_queries": expanded_queries,
+                    "sources": sources,
                     **response.metadata,
                 }
             )
         else:
+            expanded_queries = _expand_research_queries(query)
+            sources = [
+                {
+                    "title": f"Mock source for {expanded_query}",
+                    "source_type": "mock",
+                    "url": None,
+                    "query": expanded_query,
+                }
+                for expanded_query in expanded_queries
+            ]
             state.final_response = f"Research summary: {query}"
+            state.token_usage = _estimate_token_usage(query, state.final_response)
+            state.metadata.update(
+                {
+                    "expanded_queries": expanded_queries,
+                    "sources": sources,
+                }
+            )
         self._loop.step(
             state,
             AgentAction(
                 type=AgentActionType.FINAL_ANSWER,
                 content=state.final_response,
-                metadata={"sources": context.get("sources", []) if context else []},
+                metadata={"sources": state.metadata.get("sources", [])},
             ),
         )
-        state.metadata["sources"] = context.get("sources", []) if context else []
         return self._to_result(state)
 
     def send_message(self, sender: str, recipient: str, content: str) -> AgentMessage:
@@ -344,3 +474,27 @@ class AgentRuntime:
             metadata=state.metadata,
             error=state.metadata.get("error"),
         )
+
+
+def _estimate_token_usage(prompt: str, output: str) -> dict[str, int]:
+    input_tokens = max(1, len(prompt.split()))
+    output_tokens = max(1, len(output.split()))
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+    }
+
+
+def _merge_token_usage(target: dict[str, int], source: dict[str, int]) -> None:
+    for key in ("input_tokens", "output_tokens", "total_tokens"):
+        target[key] = target.get(key, 0) + source.get(key, 0)
+
+
+def _expand_research_queries(query: str) -> list[str]:
+    base = query.strip()
+    return [
+        base,
+        f"{base} background",
+        f"{base} current evidence",
+    ]
